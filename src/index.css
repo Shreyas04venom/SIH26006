@@ -1,0 +1,149 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --astra-bg: #FFFFFF;
+  --astra-surface: #F8FAFC;
+  --astra-surface-alt: #F1F5F9;
+  --astra-border: #E2E8F0;
+  --astra-text: #0F172A;
+  --astra-muted: #475569;
+  --astra-primary: #1E3A8A;
+  --astra-primary-hover: #1E40AF;
+  --astra-accent: #2563EB;
+  --astra-healthy: #10B981;
+  --astra-warning: #F59E0B;
+  --astra-critical: #EF4444;
+  --astra-analytical: #8B5CF6;
+}
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 224 76% 32%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 210 40% 96%;
+    --accent-foreground: 222 47% 11%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 224 76% 32%;
+    --radius: 0.375rem;
+  }
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: 'IBM Plex Sans', system-ui, -apple-system, sans-serif;
+  background-color: var(--astra-bg);
+  color: var(--astra-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "ss01", "cv02", "cv11";
+}
+
+h1, h2, h3, h4, h5 {
+  font-family: 'Manrope', system-ui, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.font-mono, code, pre {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94A3B8;
+}
+
+/* Sidebar navigation link */
+.astra-nav-link {
+  @apply flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-600 border-l-4 border-transparent transition-colors duration-150;
+}
+.astra-nav-link:hover {
+  @apply bg-white text-slate-900 border-slate-300;
+}
+.astra-nav-link.active {
+  @apply bg-white text-blue-900 border-blue-800 font-semibold;
+}
+
+/* Cards */
+.astra-card {
+  @apply bg-white border border-slate-200 rounded-md;
+}
+.astra-card-p {
+  @apply p-5;
+}
+
+/* Labels */
+.astra-label {
+  @apply text-[11px] tracking-widest uppercase text-slate-500 font-semibold;
+}
+
+/* Metric text */
+.astra-metric {
+  font-family: 'Manrope', sans-serif;
+  @apply text-3xl font-extrabold text-slate-900 tracking-tight;
+}
+
+/* Subtle grid texture */
+.astra-grid-bg {
+  background-image: linear-gradient(rgba(15, 23, 42, 0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(15, 23, 42, 0.03) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Stepper */
+.astra-step {
+  @apply flex items-center gap-2 text-sm;
+}
+.astra-step-dot {
+  @apply w-7 h-7 flex items-center justify-center rounded-full border border-slate-300 text-slate-500 font-semibold text-xs;
+}
+.astra-step-dot.active {
+  @apply bg-blue-900 text-white border-blue-900;
+}
+.astra-step-dot.done {
+  @apply bg-emerald-500 text-white border-emerald-500;
+}
+
+/* Buttons */
+.btn-primary {
+  @apply inline-flex items-center gap-2 px-4 py-2 rounded-md bg-blue-900 text-white text-sm font-semibold hover:bg-blue-800 transition-colors duration-150 disabled:opacity-50 disabled:cursor-not-allowed;
+}
+.btn-secondary {
+  @apply inline-flex items-center gap-2 px-4 py-2 rounded-md bg-white border border-slate-300 text-slate-800 text-sm font-semibold hover:bg-slate-50 transition-colors duration-150;
+}
+.btn-ghost {
+  @apply inline-flex items-center gap-2 px-3 py-2 rounded-md text-slate-700 text-sm font-medium hover:bg-slate-100 transition-colors duration-150;
+}
+
+/* Sim tag */
+.astra-sim-tag {
+  @apply inline-flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded;
+}

@@ -1,0 +1,41 @@
+Vessel_ID,Vessel_Name,Vessel_Category,DWT_Tons,Cargo_Capacity_Tons,Draft_M,LOA_M,Beam_M,Bunker_Fuel_Tons_Per_Day,Service_Speed_Knots,Built_Year,Flag,CII_Rating,Daily_Charter_Rate_USD
+ASTRA-HAN-101,MV Ocean Pioneer,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2015,Panama,Grade A,11300
+ASTRA-HAN-102,MV Pacific Horizon,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2016,Liberia,Grade B,11750
+ASTRA-HAN-103,MV Baltic Trader,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2017,Marshall Islands,Grade C,12200
+ASTRA-HAN-104,MV Astra Star,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2018,Singapore,Grade B,12650
+ASTRA-HAN-105,MV Maritime Voyager,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2019,India,Grade A,13100
+ASTRA-HAN-106,MV Eastern Glory,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2020,Panama,Grade B,13550
+ASTRA-HAN-107,MV Global Fortune,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2021,Liberia,Grade C,14000
+ASTRA-HAN-108,MV Coral Sea,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2022,Marshall Islands,Grade A,14450
+ASTRA-HAN-109,MV Amber Wave,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2015,Singapore,Grade C,13700
+ASTRA-HAN-110,MV Nordic Spirit,Handysize,35000,33000,9.8,180,28.5,19.5,13.5,2016,India,Grade C,14150
+ASTRA-SUP-111,MV Indus Navigator,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2015,Panama,Grade A,14800
+ASTRA-SUP-112,MV Bay Explorer,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2016,Liberia,Grade B,15250
+ASTRA-SUP-113,MV Bengal Carrier,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2017,Marshall Islands,Grade C,15700
+ASTRA-SUP-114,MV Southern Cross,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2018,Singapore,Grade B,16150
+ASTRA-SUP-115,MV Horizon Leader,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2019,India,Grade A,16600
+ASTRA-SUP-116,MV Cape Sun,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2020,Panama,Grade B,17050
+ASTRA-SUP-117,MV Golden Horizon,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2021,Liberia,Grade C,17500
+ASTRA-SUP-118,MV Blue Mariner,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2022,Marshall Islands,Grade A,17950
+ASTRA-SUP-119,MV Emerald Bay,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2015,Singapore,Grade C,17200
+ASTRA-SUP-120,MV Vanguard Pride,Supramax,58000,55000,12.8,199,32.2,26.0,14.0,2016,India,Grade C,17650
+ASTRA-PAN-121,MV Deccan Pioneer,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2015,Panama,Grade A,17300
+ASTRA-PAN-122,MV Coromandel Trader,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2016,Liberia,Grade B,17750
+ASTRA-PAN-123,MV Kalinga Express,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2017,Marshall Islands,Grade C,18200
+ASTRA-PAN-124,MV Sagar Samrat,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2018,Singapore,Grade B,18650
+ASTRA-PAN-125,MV Ganga Glory,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2019,India,Grade A,19100
+ASTRA-PAN-126,MV Oriental Fortune,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2020,Panama,Grade B,19550
+ASTRA-PAN-127,MV Monsoon Voyager,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2021,Liberia,Grade C,20000
+ASTRA-PAN-128,MV Vedic Star,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2022,Marshall Islands,Grade A,20450
+ASTRA-PAN-129,MV Chola Pride,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2015,Singapore,Grade C,19700
+ASTRA-PAN-130,MV Utkal Carrier,Panamax,75000,72000,14.2,225,32.2,32.5,14.2,2016,India,Grade C,20150
+ASTRA-CAP-131,MV Titan Ocean,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2015,Panama,Grade A,24800
+ASTRA-CAP-132,MV Iron Colossus,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2016,Liberia,Grade B,25250
+ASTRA-CAP-133,MV Cape Enterprise,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2017,Marshall Islands,Grade C,25700
+ASTRA-CAP-134,MV Mineral Giant,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2018,Singapore,Grade B,26150
+ASTRA-CAP-135,MV Pacific Goliath,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2019,India,Grade A,26600
+ASTRA-CAP-136,MV Apex Voyager,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2020,Panama,Grade B,27050
+ASTRA-CAP-137,MV Bharat Apex,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2021,Liberia,Grade C,27500
+ASTRA-CAP-138,MV Oceanic Mammoth,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2022,Marshall Islands,Grade A,27950
+ASTRA-CAP-139,MV Sovereign Titan,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2015,Singapore,Grade C,27200
+ASTRA-CAP-140,MV Astra Emperor,Capesize,180000,172000,18.2,292,45.0,52.0,14.5,2016,India,Grade C,27650

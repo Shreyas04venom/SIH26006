@@ -1,0 +1,13 @@
+Port_ID,Port_Name,State,Max_Draft_M,Max_LOA_M,Max_Beam_M,Total_Berths,Operational_Berths,Current_Vessels_In_Queue,Cargo_Handling_Capacity_TPD,Historical_Waiting_Hours,Turnaround_Time_Hours,Congestion_Risk_Level
+IN-KOL-01,Kolkata,West Bengal,8.5,190,30,8,6,14,45000,36.0,58.0,HIGH
+IN-HAL-02,Haldia,West Bengal,9.0,200,32,12,10,18,60000,32.0,52.0,HIGH
+IN-PDP-03,Paradip,Odisha,14.5,260,40,16,15,9,130000,12.0,28.0,LOW
+IN-DHM-04,Dhamra,Odisha,18.0,320,48,6,6,6,110000,10.0,24.0,LOW
+IN-GPL-05,Gopalpur,Odisha,12.5,225,33,4,4,4,40000,14.0,30.0,LOW
+IN-VTZ-06,Visakhapatnam,Andhra Pradesh,16.5,290,45,22,19,16,125000,22.0,42.0,MEDIUM
+IN-GGV-07,Gangavaram,Andhra Pradesh,19.5,330,50,9,8,7,95000,11.0,26.0,LOW
+IN-KAK-08,Kakinada,Andhra Pradesh,13.0,230,34,7,6,8,50000,18.0,36.0,MEDIUM
+IN-KPT-09,Krishnapatnam,Andhra Pradesh,18.5,320,48,10,9,8,85000,13.0,29.0,LOW
+IN-MAA-10,Chennai,Tamil Nadu,15.5,280,42,24,18,22,105000,28.0,49.0,HIGH
+IN-KMR-11,Kamarajar (Ennore),Tamil Nadu,16.0,290,45,8,7,11,90000,19.0,38.0,MEDIUM
+IN-VOC-12,V.O. Chidambaranar (Tuticorin),Tamil Nadu,14.2,245,36,14,12,10,65000,16.0,34.0,MEDIUM

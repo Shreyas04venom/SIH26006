@@ -3,11 +3,12 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { 
   LayoutDashboard, FilePlus2, LineChart, Ship, Anchor, Route, 
   HeartPulse, AlertOctagon, BellRing, GitCompareArrows, 
-  FileBarChart2, ClipboardList, Database, Network, User, Settings, LogOut, Waves, LifeBuoy, Wrench 
+  FileBarChart2, ClipboardList, Database, Network, User, Settings, LogOut, Waves, LifeBuoy, Wrench,
+  PanelLeftClose
 } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
-export default function Sidebar() {
+export default function Sidebar({ isOpen = true, onClose }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const role = user?.role || "logistics_manager";
@@ -69,21 +70,38 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-64 shrink-0 bg-slate-50 border-r border-slate-200 flex flex-col h-screen sticky top-0">
-      {/* Brand Header */}
-      <div className="px-5 py-5 border-b border-slate-200 flex items-center gap-3">
-        <div className="w-9 h-9 rounded-md bg-blue-900 text-white grid place-items-center font-mono font-extrabold text-base shadow-sm">
-          A
-        </div>
-        <div>
-          <div className="font-extrabold tracking-tight text-slate-900 text-lg leading-none" style={{ fontFamily: "Manrope" }}>
-            ASTRA
+    <aside
+      className={`transition-all duration-300 ease-in-out shrink-0 bg-slate-50 flex flex-col h-screen sticky top-0 z-30 ${
+        isOpen ? "w-64 border-r border-slate-200 opacity-100" : "w-0 border-r-0 overflow-hidden opacity-0 pointer-events-none"
+      }`}
+    >
+      <div className="w-64 flex flex-col h-full flex-1 min-w-[16rem]">
+        {/* Brand Header */}
+        <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-md bg-blue-900 text-white grid place-items-center font-mono font-extrabold text-base shadow-sm">
+              A
+            </div>
+            <div>
+              <div className="font-extrabold tracking-tight text-slate-900 text-lg leading-none" style={{ fontFamily: "Manrope" }}>
+                ASTRA
+              </div>
+              <div className="text-[10px] uppercase tracking-widest text-slate-500 font-mono mt-1">
+                Maritime Intelligence
+              </div>
+            </div>
           </div>
-          <div className="text-[10px] uppercase tracking-widest text-slate-500 font-mono mt-1">
-            Maritime Intelligence
-          </div>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors"
+              title="Hide Menu Bar"
+              aria-label="Hide Sidebar"
+            >
+              <PanelLeftClose size={18} />
+            </button>
+          )}
         </div>
-      </div>
 
       {/* Role Badge In Sidebar */}
       <div className="px-4 py-2.5 bg-slate-100/70 border-b border-slate-200/80 flex items-center justify-between">
@@ -126,6 +144,7 @@ export default function Sidebar() {
           </button>
         </div>
       </div>
-    </aside>
-  );
+    </div>
+  </aside>
+);
 }

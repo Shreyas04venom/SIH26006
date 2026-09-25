@@ -1,11 +1,11 @@
 import React, { useState } from "react";
-import { Search, Bell, Users, Sparkles, Play, CheckCircle2, ChevronRight, X, Compass, AlertTriangle, Anchor, Navigation, RefreshCw } from "lucide-react";
+import { Search, Bell, Users, Sparkles, Play, CheckCircle2, ChevronRight, X, Compass, AlertTriangle, Anchor, Navigation, RefreshCw, PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import { useAuth } from "../lib/auth";
 import { useNavigate } from "react-router-dom";
 import { useFlow } from "../lib/flow";
 import { toast } from "sonner";
 
-export default function Topbar() {
+export default function Topbar({ sidebarOpen = true, onToggleSidebar }) {
   const { user, login } = useAuth();
   const nav = useNavigate();
   const [showDemoTour, setShowDemoTour] = useState(false);
@@ -152,9 +152,24 @@ export default function Topbar() {
 
   return (
     <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 gap-4 sticky top-0 z-20">
-      {/* Search Bar */}
-      <div className="flex-1 max-w-md">
-        <div className="relative">
+      {/* Left Menu Toggle + Search Bar */}
+      <div className="flex items-center gap-3 flex-1 max-w-md">
+        {onToggleSidebar && (
+          <button
+            onClick={onToggleSidebar}
+            className={`p-2 rounded-lg border transition-all flex items-center justify-center shrink-0 ${
+              !sidebarOpen
+                ? "bg-blue-900 text-white border-blue-900 shadow-sm hover:bg-blue-800"
+                : "bg-slate-50 text-slate-600 border-slate-200 hover:text-slate-900 hover:bg-slate-100"
+            }`}
+            title={sidebarOpen ? "Hide left menu bar" : "Show left menu bar"}
+            aria-label={sidebarOpen ? "Hide left menu bar" : "Show left menu bar"}
+          >
+            {sidebarOpen ? <PanelLeftClose size={18} /> : <PanelLeftOpen size={18} />}
+          </button>
+        )}
+
+        <div className="relative flex-1">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             data-testid="topbar-search"

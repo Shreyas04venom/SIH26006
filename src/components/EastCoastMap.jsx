@@ -470,8 +470,8 @@ export default function EastCoastMap({
     const anyScenarioActive = Boolean(flow.weatherDelayActive || flow.portCongestionActive || flow.berthReallocated || flow.portDiverted || flow.feederProgress > 0);
     const showSimulation = propShowSimulation !== undefined ? propShowSimulation : Boolean((requirement && requirement.status !== "COMPLETED" && hasContractorAccepted) || anyScenarioActive);
     const simProgress = propSimProgress !== undefined ? propSimProgress : (flow.simProgress || 0);
-    const isVoyageCompleted = Boolean(simProgress >= 100 || requirement?.status === "COMPLETED");
-    const isPlaying = isVoyageCompleted ? false : (propIsPlaying !== undefined ? propIsPlaying : flow.isPlaying);
+    const isVoyageCompleted = Boolean(simProgress >= 100);
+    const isPlaying = propIsPlaying !== undefined ? propIsPlaying : Boolean(flow.isPlaying);
     const togglePlay = onTogglePlay || flow.togglePlay;
     const simSpeed = propSimSpeed !== undefined ? propSimSpeed : (flow.simSpeed || 1);
     const setSimSpeed = onSetSimSpeed || flow.setSimSpeed;
@@ -722,11 +722,20 @@ export default function EastCoastMap({
                     {/* Play/Pause */}
                     <button
                         onClick={() => {
-                            if (isVoyageCompleted) return;
-                            togglePlay();
+                            if (simProgress >= 100) {
+                                if (onResetSimulation) onResetSimulation();
+                                else resetSimulation();
+                                setTimeout(() => {
+                                    if (onTogglePlay) onTogglePlay();
+                                    else togglePlay();
+                                }, 50);
+                            } else {
+                                if (onTogglePlay) onTogglePlay();
+                                else togglePlay();
+                            }
                         }}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors font-medium"
-                        title={isVoyageCompleted ? "Voyage Completed" : isPlaying ? "Pause Simulation" : "Resume Simulation"}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 transition-colors font-medium cursor-pointer"
+                        title={isPlaying ? "Pause Simulation" : "Resume / Play Simulation"}
                     >
                         {isPlaying ? <Pause size={14} className="text-amber-400" /> : <Play size={14} className="text-emerald-400" />}
                         <span>{isPlaying ? "Live" : "Paused"}</span>

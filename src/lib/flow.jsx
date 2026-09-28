@@ -553,7 +553,7 @@ export function FlowProvider({ children }) {
 
         // Anti-blinking: only update isPlaying from server if consistent with state
         if (s.isPlaying !== undefined) {
-          if (simProgressRef.current >= 100 || requirementRef.current?.status === "COMPLETED") {
+          if (simProgressRef.current >= 100) {
             if (isPlayingRef.current) {
               setIsPlaying(false);
               isPlayingRef.current = false;
@@ -1595,7 +1595,20 @@ export function FlowProvider({ children }) {
   }, [feederDeparting, simSpeed]);
 
   const togglePlay = () => {
+    // If voyage reached 100% or was previously completed, auto-reset and replay
     if (simProgressRef.current >= 100 || requirementRef.current?.status === "COMPLETED") {
+      setSimProgress(0);
+      simProgressRef.current = 0;
+      setSimActive(true);
+      simActiveRef.current = true;
+      if (requirementRef.current?.status === "COMPLETED") {
+        setRequirementState(prev => prev ? ({ ...prev, status: "ACTIVE_IN_TRANSIT", deliveredAtPlant: false }) : prev);
+      }
+      setIsPlaying(true);
+      isPlayingRef.current = true;
+      try {
+        api.post('/supply-chain/state', { isPlaying: true, simProgress: 0, simActive: true }).catch(() => {});
+      } catch (e) {}
       return;
     }
     setIsPlaying(p => {

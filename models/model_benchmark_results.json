@@ -1,0 +1,63 @@
+{
+  "model_1_freight_forecast": {
+    "model_name": "Freight Rate Forward Forecaster",
+    "algorithm": "LightGBM Regressor (Ensemble)",
+    "category": "Machine Learning Model (Regression)",
+    "train_r2": 0.9972,
+    "test_r2": 0.9956,
+    "test_mae_usd": 0.317,
+    "test_rmse_usd": 0.416,
+    "fit_status": "OPTIMAL_FIT",
+    "top_features": [
+      [
+        "BDI_Index",
+        24.0
+      ],
+      [
+        "Lag_1_Rate",
+        16.2
+      ],
+      [
+        "Lag_7_Rate",
+        15.8
+      ],
+      [
+        "Rolling_7_BDI",
+        9.7
+      ],
+      [
+        "VLSFO_Bunker_USD_Per_Ton",
+        8.2
+      ]
+    ]
+  },
+  "model_2_port_waiting": {
+    "model_name": "Port Waiting Queue Regressor",
+    "algorithm": "Gradient Boosted Decision Trees (GBDT)",
+    "category": "Machine Learning Model (Regression)",
+    "r2_score": 0.9854,
+    "mae_hours": 0.78,
+    "fit_status": "OPTIMAL_FIT"
+  },
+  "model_3_congestion_risk": {
+    "model_name": "Port Congestion & Idle-Time Classifier",
+    "algorithm": "Gradient Boosting Classifier (Multi-Class)",
+    "category": "Machine Learning Model (Classification)",
+    "accuracy_pct": 100.0,
+    "f1_score": 1.0,
+    "classes": [
+      "LOW",
+      "MEDIUM",
+      "HIGH"
+    ]
+  },
+  "model_4_fleet_optimization": {
+    "method_name": "Multimodal Fleet & Route Optimizer",
+    "method": "Mixed-Integer Linear Programming (MILP)",
+    "category": "Mathematical Optimization Method (Operations Research)",
+    "solver": "SciPy HiGHS Exact Branch-and-Bound",
+    "optimal_vessel": "Panamax",
+    "optimal_trucks": 1750,
+    "minimized_cost_usd": 1793842.0
+  }
+}

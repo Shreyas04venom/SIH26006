@@ -1547,9 +1547,8 @@ export default function Dashboard() {
                         originPort={requirement?.originPort || "Singapore"}
                         activePort={requirement?.destinationPort || "Dhamra"}
                         highlightedPorts={[requirement?.destinationPort || "Dhamra", "Krishnapatnam", "Visakhapatnam"]}
-                        showRoute={hasActiveBooking}
-                        showSimulation={hasActiveBooking}
-                        bookedVessel={requirement?.selectedVessel || requirement?.assignedVessel}
+                        showRoute={false}
+                        showSimulation={false}
                     />
                 </div>
             </div>

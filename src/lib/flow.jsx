@@ -1429,14 +1429,14 @@ export function FlowProvider({ children }) {
             try {
               api.post('/supply-chain/state', { waitingForOriginGateScan: true }).catch(() => {});
             } catch (e) {}
-            // Seamless auto-advance timeout (2.2s): if user doesn't manually click, automatically clear gate pass
+            // Graceful auto-advance fallback (15s): gives presenter ample time to scan QR pass or explain
             setTimeout(() => {
               setOriginGateCleared(true);
               setWaitingForOriginGateScan(false);
               try {
                 api.post('/supply-chain/gate-scan', { gateType: "ORIGIN" }).catch(() => {});
               } catch (e) {}
-            }, 2200);
+            }, 15000);
           }
           return 15;
         }
@@ -1477,14 +1477,14 @@ export function FlowProvider({ children }) {
             try {
               api.post('/supply-chain/state', { waitingForTruckGateScan: true }).catch(() => {});
             } catch (e) {}
-            // Seamless auto-advance timeout (2.2s): if user doesn't manually click, automatically clear gate pass
+            // Graceful auto-advance fallback (15s): gives presenter ample time to scan QR pass or explain
             setTimeout(() => {
               setGateCleared(true);
               setWaitingForTruckGateScan(false);
               try {
                 api.post('/supply-chain/gate-scan', { gateType: "DESTINATION" }).catch(() => {});
               } catch (e) {}
-            }, 2200);
+            }, 15000);
           }
           return 75;
         }

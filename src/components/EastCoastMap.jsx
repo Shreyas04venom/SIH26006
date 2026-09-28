@@ -427,6 +427,44 @@ const INITIAL_FLEET = [
         status: "Anchored / Waiting Berth",
         fuelBurn: "4.2 MT/day (Aux Engine)",
         eta: "Berthed Soon"
+    },
+    {
+        id: "ASTRA-PAN-218",
+        name: "MV Kalinga Star",
+        category: "Panamax",
+        dwt: 74500,
+        origin: "Newcastle, Australia",
+        destination: "Kolkata",
+        cargo: "68,000 MT Coking Coal",
+        speedKnots: 13.9,
+        progress: 0.52,
+        routeStartX: 980,
+        routeStartY: 440,
+        routeMidX: 840,
+        routeMidY: 220,
+        destPortId: "Kolkata",
+        status: "Underway",
+        fuelBurn: "29.8 MT/day VLSFO",
+        eta: "In 1.8 days"
+    },
+    {
+        id: "ASTRA-SUP-330",
+        name: "MV Andhra Bulk",
+        category: "Supramax",
+        dwt: 56000,
+        origin: "Balikpapan, Indonesia",
+        destination: "Kakinada",
+        cargo: "52,500 MT Coal",
+        speedKnots: 14.1,
+        progress: 0.44,
+        routeStartX: 960,
+        routeStartY: 640,
+        routeMidX: 720,
+        routeMidY: 480,
+        destPortId: "Kakinada",
+        status: "Underway",
+        fuelBurn: "23.4 MT/day VLSFO",
+        eta: "In 1.2 days"
     }
 ];
 
@@ -463,12 +501,12 @@ export default function EastCoastMap({
     const flow = useFlow?.() || {};
     const requirement = flow.requirement;
 
-    // Use props if passed, otherwise fallback to flow context
+    // Use props if passed, otherwise default to overall fleet view (no single route overlay)
     const hasContractorAccepted = Boolean(requirement && (requirement.contractorAccepted === true || requirement.status === "ACTIVE_IN_TRANSIT" || requirement.status === "ACCEPTED") && requirement.status !== "PENDING_REVIEW");
-    const showRoute = propShowRoute !== undefined ? propShowRoute : Boolean(requirement && requirement.status !== "COMPLETED" && hasContractorAccepted);
-    // showSimulation: true when sim active, OR when a scenario is triggered (for live demo even before contractor)
+    const showRoute = propShowRoute !== undefined ? propShowRoute : false;
+    // showSimulation: only active if explicitly enabled or an interactive scenario is active
     const anyScenarioActive = Boolean(flow.weatherDelayActive || flow.portCongestionActive || flow.berthReallocated || flow.portDiverted || flow.feederProgress > 0);
-    const showSimulation = propShowSimulation !== undefined ? propShowSimulation : Boolean((requirement && requirement.status !== "COMPLETED" && hasContractorAccepted) || anyScenarioActive);
+    const showSimulation = propShowSimulation !== undefined ? propShowSimulation : anyScenarioActive;
     const simProgress = propSimProgress !== undefined ? propSimProgress : (flow.simProgress || 0);
     const isVoyageCompleted = Boolean(simProgress >= 100);
     const isPlaying = propIsPlaying !== undefined ? propIsPlaying : Boolean(flow.isPlaying);
@@ -580,14 +618,18 @@ export default function EastCoastMap({
         };
     }, []);
 
-    // Live simulation tick
+    // Live simulation tick — smooth continuous progression for all vessels approaching their destination ports
     useEffect(() => {
         if (!isPlaying) return;
         const interval = setInterval(() => {
             setVessels((prev) =>
                 prev.map((v) => {
-                    let newProgress = (v.progress || 0.1) + 0.0018 * simSpeed;
-                    if (newProgress > 0.98) newProgress = 0.05; // loop route smoothly
+                    const speedFactor = v.speedKnots ? v.speedKnots / 14 : 1;
+                    let newProgress = (v.progress || 0.1) + 0.0016 * simSpeed * speedFactor;
+                    if (newProgress > 0.98) {
+                        // Loop smoothly with slight randomized offset when arriving at port
+                        newProgress = 0.02 + ((v.id.charCodeAt(v.id.length - 1) % 5) * 0.02);
+                    }
                     return { ...v, progress: newProgress };
                 })
             );

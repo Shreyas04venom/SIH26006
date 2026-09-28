@@ -502,11 +502,11 @@
   "portCongestionActive": false,
   "portDiverted": false,
   "vesselArrivedAtPort": true,
-  "waitingForTruckGateScan": true,
+  "waitingForTruckGateScan": false,
   "waitingForOriginGateScan": false,
   "gateCleared": false,
-  "originGateCleared": true,
-  "lastUpdated": "2026-09-28T17:48:31.310Z",
+  "originGateCleared": false,
+  "lastUpdated": "2026-09-28T18:50:37.345Z",
   "activeScenario": "weather_delay",
   "vesselWaitingInSwell": false
 }

@@ -471,7 +471,7 @@ export default function RoadLogistics() {
     if (!isLiveMode) return "AT_GATE";
     if (simProgress >= 85) return "VESSEL_LOADED";
     if (simProgress >= 35) return "LOADING_IN_VESSEL";
-    if (originGateCleared || simProgress >= 15) return "TRANSIT_TO_VESSEL";
+    if (originGateCleared) return "TRANSIT_TO_VESSEL";
     return "AT_GATE";
   })();
 
@@ -485,7 +485,7 @@ export default function RoadLogistics() {
       // Moving from warehouse/mine toward port gate
       return Math.min(0.87, (simProgress / 14) * 0.87);
     }
-    if (simProgress < 15 && !originGateCleared) {
+    if (!originGateCleared) {
       // Stopped at port gate
       return 0.87;
     }
@@ -581,30 +581,32 @@ export default function RoadLogistics() {
       const companyCode = (requirement.companyCode || company.slice(0, 4)).toUpperCase();
       const vesselName = requirement.selectedVessel?.name || "MV Bengal Voyager";
 
-      const isGateOpen = originGateCleared || liveStep !== "AT_GATE";
-      const isAtBerth = liveStep === "LOADING_IN_VESSEL" || liveStep === "VESSEL_LOADED";
+      const isGateOpen = isFirstMile ? originGateCleared : gateCleared;
+      const isAtBerth = isFirstMile 
+        ? (originGateCleared && (simProgress >= 15 && simProgress < 85))
+        : (lastMileProgressRatio > 0.95);
 
-      // ── First-mile status labels ──
+      // ── First-mile status labels (matching destination logic) ──
       let statusLabel, phaseLabel, speedVal;
       if (isFirstMile) {
-        if (liveStep === "AT_GATE" && simProgress < 14) {
+        if (simProgress < 14) {
           statusLabel = "IN TRANSIT TO PORT";
-          phaseLabel = `EN ROUTE TO ${corridorData.dest?.shortName?.toUpperCase() || "PORT"} GATE`;
+          phaseLabel = `EN ROUTE TO ${corridorData.dest?.shortName?.toUpperCase() || "ORIGIN PORT"} GATE 01`;
           speedVal = 62;
-        } else if (liveStep === "AT_GATE") {
+        } else if (!originGateCleared) {
           statusLabel = "STOPPED OUTSIDE BARRIER";
-          phaseLabel = "AT PORT GATE 01 · AWAITING QR SCAN";
+          phaseLabel = `AT ${corridorData.dest?.shortName?.toUpperCase() || "ORIGIN PORT"} IN-GATE 01 · QR SCAN PENDING`;
           speedVal = 0;
-        } else if (liveStep === "TRANSIT_TO_VESSEL") {
+        } else if (simProgress < 35) {
           statusLabel = "ENTERING PORT";
-          phaseLabel = `TRANSIT TO BERTH (#2 ${vesselName})`;
+          phaseLabel = `TRANSIT TO QUAYSIDE BERTH (${vesselName})`;
           speedVal = 32;
-        } else if (liveStep === "LOADING_IN_VESSEL") {
+        } else if (simProgress < 85) {
           statusLabel = "BERTH LOADING";
-          phaseLabel = `LOADING ONTO ${vesselName}`;
+          phaseLabel = `LOADING ONTO ${vesselName} (${liveLoadingPct}%)`;
           speedVal = 0;
         } else {
-          statusLabel = "VESSEL LOADED";
+          statusLabel = "VESSEL LOADED & DEPARTED";
           phaseLabel = `${vesselName} LOADED · READY FOR DEPARTURE`;
           speedVal = 0;
         }
@@ -656,8 +658,9 @@ export default function RoadLogistics() {
         etaWindow: "ON-TIME (14:12)",
         speedKmh: speedVal,
         progressRatio: isFirstMile ? liveProgressRatio : lastMileProgressRatio,
-        gatePassId: requirement.gatePassId || (isFirstMile ? "GP-PWCS-LIVE" : "GP-ASTRA-LIVE"),
-        gateApprovalStatus: isFirstMile ? (isGateOpen ? "APPROVED" : "STOPPED_OUTSIDE") : (gateCleared ? "APPROVED" : "STOPPED_OUTSIDE"),
+        gateApprovalStatus: isFirstMile 
+          ? (originGateCleared ? "APPROVED" : "STOPPED_OUTSIDE") 
+          : (gateCleared ? "APPROVED" : "STOPPED_OUTSIDE"),
         designatedBay: isFirstMile ? `Quayside Berth #2 (${vesselName})` : "Rotary Tippler #01 (Coal Stockpile)",
         originLoadingBay: isFirstMile 
           ? (requirement.originWarehouse || "Hunter Valley Coal Mine Siding #4") 
@@ -729,12 +732,8 @@ export default function RoadLogistics() {
       if (isLiveMode) {
         if (activeTab === "first-mile") {
           if (approveOriginGatePass) await approveOriginGatePass(plate, passId);
-          setLiveStep("TRANSIT_TO_VESSEL");
-          toast.success(`✅ Origin Port Cleared: Boom barrier raised for ${plate}! Vessel ${activeTruck.vesselName || "the vessel"} authorized to depart for destination port.`);
         } else {
-          if (scanGatePass) scanGatePass(plate, passId);
-          setLiveStep("TRANSIT_TO_VESSEL");
-          toast.success(`✅ Destination Port Cleared: Boom barrier raised for ${plate}! Vehicle advancing to quayside berth beside ${activeTruck.vesselName || "the vessel"}.`);
+          if (scanGatePass) await scanGatePass(plate, passId);
         }
       } else {
         // Sample Mode toggle based on activeTab
@@ -913,24 +912,16 @@ export default function RoadLogistics() {
 
           {/* Origin gate action */}
           {(!originGateCleared && (simProgress >= 14 || waitingForOriginGateScan)) && (
-            <div className="flex flex-wrap items-center justify-between gap-3 p-3 rounded-xl bg-blue-950/90 border border-blue-500 text-blue-200 text-xs animate-pulse shadow-md">
-              <div className="flex items-center gap-2.5">
-                <QrCode size={18} className="text-blue-400 shrink-0" />
-                <div>
-                  <div className="font-extrabold text-blue-300">
-                    Origin Port Gate 01 · {corridorData.source?.shortName || "Origin Port"} · Vessel Departure Clearance Required
-                  </div>
-                  <div className="text-[11px] text-blue-200 mt-0.5">
-                    First-mile truck arrived at origin port quay. Vessel <strong>{activeTruck?.vesselName || "vessel"}</strong> departure voyage is paused until Origin Port QR Gate Pass is scanned.
-                  </div>
-                </div>
+            <div className="flex items-center justify-between gap-3 p-2.5 rounded-lg bg-blue-950/90 border border-blue-500 text-blue-200 text-xs animate-pulse">
+              <div className="flex items-center gap-2">
+                <QrCode size={14} className="text-blue-400 shrink-0" />
+                <span>First-mile truck at Origin Gate 01 — scan PCS QR gate pass to authorize entry, quayside loading & vessel departure.</span>
               </div>
               <button
-                onClick={() => approveOriginGatePass && approveOriginGatePass(activeTruck?.plate, activeTruck?.gatePassId)}
-                className="px-4 py-2 rounded-lg bg-blue-500 hover:bg-blue-400 text-white font-bold text-xs flex items-center gap-1.5 shadow-md cursor-pointer transition-all hover:scale-105 shrink-0"
+                onClick={() => handleMachineAcceptance()}
+                className="px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-400 text-white font-bold text-[11px] whitespace-nowrap cursor-pointer transition-all shrink-0"
               >
-                <QrCode size={14} />
-                <span>Scan Origin QR & Authorize Vessel Departure ➔</span>
+                Scan Origin Gate Pass →
               </button>
             </div>
           )}
@@ -943,7 +934,7 @@ export default function RoadLogistics() {
                 <span>Vessel berthed at destination port. Last-mile truck at Gate 01 — scan PCS QR gate pass to start discharge + road delivery.</span>
               </div>
               <button
-                onClick={() => scanGatePass && scanGatePass()}
+                onClick={() => handleMachineAcceptance()}
                 className="px-3 py-1.5 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-[11px] whitespace-nowrap cursor-pointer transition-all shrink-0"
               >
                 Scan Dest. Gate Pass →

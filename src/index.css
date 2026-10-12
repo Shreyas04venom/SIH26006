@@ -147,3 +147,67 @@ h1, h2, h3, h4, h5 {
 .astra-sim-tag {
   @apply inline-flex items-center gap-1.5 text-[10px] tracking-widest uppercase font-semibold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-1 rounded;
 }
+
+/* Print Media Styles for Formal Executive Reports */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 12mm 10mm;
+  }
+
+  /* Strictly hide all navigational, interactive, and floating elements */
+  header,
+  aside,
+  nav,
+  .no-print,
+  .print\:hidden,
+  [data-testid="topbar-search"],
+  button,
+  .astra-sim-tag {
+    display: none !important;
+    visibility: hidden !important;
+    height: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    position: absolute !important;
+    pointer-events: none !important;
+  }
+
+  body, html, #root {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+  }
+
+  main {
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  /* Prevent awkward page break splits inside tables, cards, and sections */
+  table, tr, td, th {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  .print\:break-inside-avoid,
+  .avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+  }
+}
+

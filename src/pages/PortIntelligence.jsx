@@ -820,48 +820,116 @@ export default function PortIntelligence() {
       </div>
 
 
-      {/* East Coast 12 Ports Grid */}
+      {/* East Coast 12 Ports Benchmark Table */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between px-1">
-          <div className="text-xs uppercase font-mono font-bold text-slate-500">
-            EAST COAST DEEPWATER PORTS BENCHMARK
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <div>
+            <div className="text-xs uppercase font-mono font-bold text-slate-800 flex items-center gap-2">
+              <span>EAST COAST DEEPWATER PORTS BENCHMARK</span>
+              <span className="px-1.5 py-0.5 rounded bg-blue-100 text-blue-900 text-[10px] font-bold">12 PORTS</span>
+            </div>
+            <div className="text-[11px] text-slate-500 font-mono mt-0.5">
+              Telemetry dataset: <span className="font-semibold text-slate-700">datasets/east_coast_india_port_telemetry.csv</span>
+            </div>
           </div>
-          <span className="text-xs text-slate-400 font-mono">Click any port to inspect terminal manifest</span>
+          <span className="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            Click any row to inspect terminal manifest & vessel allocation
+          </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {ports.map((p) => (
-            <div 
-              key={p.portName} 
-              onClick={() => setActivePortName(p.portName)}
-              className={`astra-card astra-card-p cursor-pointer transition-all border-2 ${
-                activePortName === p.portName 
-                  ? "border-blue-900 bg-blue-50/20 shadow-md ring-1 ring-blue-900" 
-                  : "border-slate-200 hover:border-slate-300 bg-white"
-              }`}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <div className="text-lg font-extrabold text-slate-900" style={{ fontFamily: "Manrope" }}>{p.portName}</div>
-                  <div className="text-xs text-slate-500">{p.state}</div>
-                </div>
-                <span className={`text-[11px] font-bold px-2 py-1 rounded border ${congStyle(p.currentCongestion)}`}>
-                  {p.currentCongestion.toUpperCase()}
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-                <Stat label="Draft" value={`${p.maxDraftM}m`} />
-                <Stat label="LOA" value={`${p.maxLoaM}m`} />
-                <Stat label="Beam" value={`${p.maxBeamM}m`} />
-              </div>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mt-2 text-center">
-                <Stat label="Capacity/day" value={`${(p.cargoHandlingCapacityTonsPerDay/1000).toFixed(0)}k t`} />
-                <Stat label="Wait Hist." value={`${p.historicalWaitingHours}h`} />
-                <Stat label="Turnaround" value={`${p.turnaroundTimeHours}h`} />
-                <Stat label="Vessels" value={p.currentVesselCount} />
-              </div>
-            </div>
-          ))}
+        <div className="astra-card overflow-hidden border border-slate-200 shadow-sm bg-white">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse text-xs font-mono">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200 text-[11px] text-slate-600 font-bold uppercase tracking-wider">
+                  <th className="py-3 px-4">Port / State</th>
+                  <th className="py-3 px-3">Congestion</th>
+                  <th className="py-3 px-3 text-right">Max Draft</th>
+                  <th className="py-3 px-3 text-right">Max LOA</th>
+                  <th className="py-3 px-3 text-right">Max Beam</th>
+                  <th className="py-3 px-3 text-right">Capacity / Day</th>
+                  <th className="py-3 px-3 text-right">Historical Wait</th>
+                  <th className="py-3 px-3 text-right">Turnaround (TAT)</th>
+                  <th className="py-3 px-3 text-right">Queue Count</th>
+                  <th className="py-3 px-4 text-center">Status / Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {ports.map((p) => {
+                  const isSelected = activePortName === p.portName;
+                  const isHighRisk = p.currentCongestion === "High" || p.currentCongestion === "HIGH";
+                  const isMedRisk = p.currentCongestion === "Medium" || p.currentCongestion === "MEDIUM";
+                  return (
+                    <tr
+                      key={p.portName}
+                      onClick={() => setActivePortName(p.portName)}
+                      className={`cursor-pointer transition-all duration-150 group ${
+                        isSelected
+                          ? "bg-blue-50/80 font-medium border-l-4 border-l-blue-900 shadow-sm"
+                          : "hover:bg-slate-50/90 border-l-4 border-l-transparent"
+                      }`}
+                    >
+                      <td className="py-3 px-4">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${isSelected ? "bg-blue-900 ring-2 ring-blue-300" : "bg-slate-300 group-hover:bg-slate-400"}`} />
+                          <div>
+                            <div className="font-extrabold text-slate-900 text-sm group-hover:text-blue-900 transition-colors">
+                              {p.portName}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-normal">
+                              {p.state}
+                            </div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3">
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border inline-block ${congStyle(p.currentCongestion)}`}>
+                          {p.currentCongestion.toUpperCase()}
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right font-bold text-slate-800">
+                        {p.maxDraftM}m
+                      </td>
+                      <td className="py-3 px-3 text-right text-slate-700">
+                        {p.maxLoaM}m
+                      </td>
+                      <td className="py-3 px-3 text-right text-slate-700">
+                        {p.maxBeamM}m
+                      </td>
+                      <td className="py-3 px-3 text-right font-bold text-slate-900">
+                        {((p.cargoHandlingCapacityTonsPerDay || 0) / 1000).toFixed(0)}k t
+                      </td>
+                      <td className="py-3 px-3 text-right">
+                        <span className={`font-bold ${isHighRisk ? "text-red-700" : isMedRisk ? "text-amber-700" : "text-emerald-700"}`}>
+                          {p.historicalWaitingHours}h
+                        </span>
+                      </td>
+                      <td className="py-3 px-3 text-right font-semibold text-slate-800">
+                        {p.turnaroundTimeHours}h
+                      </td>
+                      <td className="py-3 px-3 text-right font-bold text-slate-900">
+                        <span className="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700">
+                          {p.currentVesselCount} ships
+                        </span>
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        {isSelected ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold bg-blue-900 text-white px-2.5 py-1 rounded shadow-sm">
+                            <CheckCircle2 size={12} /> Selected
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-400 group-hover:text-blue-900 group-hover:underline">
+                            Inspect ➔
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>

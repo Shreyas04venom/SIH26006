@@ -379,6 +379,8 @@ export function TopDownTruckSvg({ size = 42, horizontal = true, variant = "ribbe
 // Master top-down vessel selector
 export default function TopDownVesselIcon({ category = "Panamax", size, className = "" }) {
   switch (category) {
+    case "VLOC":
+      return <CapesizeShipSvg size={size ? size * 1.2 : 44} className={className} />;
     case "Capesize":
       return <CapesizeShipSvg size={size || 38} className={className} />;
     case "Panamax":

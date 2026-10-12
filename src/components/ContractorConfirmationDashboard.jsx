@@ -47,6 +47,121 @@ export default function ContractorConfirmationDashboard() {
   const rejectedCount = requirements.filter(r => r.status === "REJECTED_WITH_SOLUTION").length;
   const waitCount = requirements.filter(r => r.status === "WAIT_SHIPBUILDER").length;
 
+  // 12 Major East Coast of India Port Draft Limits
+  const EAST_COAST_DRAFT_LIMITS = {
+    Paradip: 14.5,
+    Visakhapatnam: 16.5,
+    Haldia: 9.0,
+    Krishnapatnam: 18.0,
+    Chennai: 14.0,
+    Dhamra: 18.0,
+    Gangavaram: 18.5,
+    "Ennore (Kamarajar)": 15.0,
+    Kakinada: 12.5,
+    "Tuticorin (V.O.C)": 14.0,
+    Gopalpur: 13.5,
+    "Kolkata (SMP)": 8.5
+  };
+
+  // AI Step 2: System predicts the best vessel hull for the contractor to allocate
+  const predictBestVesselForReq = (req) => {
+    const candidateHulls = (shipbuilderHulls && shipbuilderHulls.length > 0) ? shipbuilderHulls : [
+      { name: "MV Berge Everest", category: "VLOC", dwt: "388,000 DWT", draftM: 21.5, location: "Deepwater Roads / Singapore", status: "READY_NOW", condition: "Valemax Class A1 (Deep Draft)", health: 97 },
+      { name: "MV Tata Titan", category: "Capesize", dwt: "180,000 DWT", draftM: 18.2, location: "Bay of Bengal Deepwater", status: "READY_NOW", condition: "Heavy Bulk Class A1", health: 98 },
+      { name: "MV Bengal Voyager", category: "Panamax", dwt: "74,000 DWT", draftM: 13.8, location: "Newcastle / Paradip", status: "READY_NOW", condition: "Survey Class A1", health: 95 },
+      { name: "MV Jag Radha", category: "Panamax", dwt: "76,500 DWT", draftM: 14.1, location: "Singapore Ballast", status: "BALLAST_TRANSIT", condition: "ETA 3 Days (Hull Certified)", health: 97 },
+      { name: "MV Coastal Pride", category: "Supramax", dwt: "58,000 DWT", draftM: 12.8, location: "Visakhapatnam Harbor", status: "READY_NOW", condition: "Cranes 4x30T Active", health: 92 },
+      { name: "MV Vishva Nidhi", category: "Capesize", dwt: "180,000 DWT", draftM: 18.2, location: "Krishnapatnam Deepwater", status: "READY_NOW", condition: "Deep Berth Ready", health: 93 },
+      { name: "MV Chennai Express", category: "Handysize", dwt: "35,000 DWT", draftM: 10.2, location: "Chennai Anchorage", status: "READY_NOW", condition: "Coastal Shallow Draft", health: 94 },
+      { name: "MV Deccan Pioneer", category: "Panamax", dwt: "75,000 DWT", draftM: 13.9, location: "Krishnapatnam Roads", status: "READY_NOW", condition: "Optimal Engine", health: 96 },
+      { name: "MV Coromandel Trader", category: "Panamax", dwt: "74,500 DWT", draftM: 13.8, location: "Ennore Harbor", status: "READY_NOW", condition: "At Berth Ready", health: 93 },
+      { name: "MV Indus Navigator", category: "Supramax", dwt: "63,000 DWT", draftM: 13.2, location: "Bay of Bengal", status: "READY_NOW", condition: "Peak Health", health: 98 }
+    ];
+
+    const qty = Number(req?.cargoQuantity) || 70000;
+    const destPort = req?.destinationPort || "Paradip";
+    const portMaxDraft = EAST_COAST_DRAFT_LIMITS[destPort] || 14.5;
+    const isVlocReq = qty >= 200000;
+    const isCapeReq = qty >= 95000 && qty < 200000;
+
+    const scored = candidateHulls.map(hull => {
+      let score = 50;
+      const numDwt = typeof hull.dwt === "number" ? hull.dwt : (parseInt(String(hull.dwt).replace(/[^0-9]/g, "")) || 74000);
+      const draft = hull.draftM || (hull.category === "VLOC" ? 21.5 : hull.category === "Capesize" ? 18.2 : hull.category === "Panamax" ? 13.8 : hull.category === "Supramax" ? 12.8 : 10.0);
+
+      // Volume-based category fitness
+      if (isVlocReq) {
+        if (hull.category === "VLOC") score += 55;
+        else score -= 40;
+      } else if (isCapeReq) {
+        if (hull.category === "Capesize") score += 50;
+        else score -= 35;
+      } else {
+        if (hull.category === "VLOC" || hull.category === "Capesize") score -= 45;
+      }
+
+      // 1. Draft compliance & transshipment compatibility
+      const draftDiff = portMaxDraft - draft;
+      if (draftDiff < 0) {
+        if (isVlocReq && hull.category === "VLOC") {
+          score += 10; // Offshore transshipment / lightering at deep outer roads
+        } else if (isCapeReq && hull.category === "Capesize") {
+          score += 15; // Lightering / deepwater berth operations
+        } else {
+          score -= 40; // Ineligible draft
+        }
+      } else {
+        score += 20; // Safe direct draft
+      }
+
+      // 2. Capacity utilization
+      const utilization = qty / numDwt;
+      if (utilization >= 0.70 && utilization <= 1.05) {
+        score += 35; // Ideal hold utilization
+      } else if (utilization > 1.05) {
+        score -= 45; // Cargo overflows ship deadweight
+      } else if (utilization >= 0.40) {
+        score += 15; // Acceptable utilization
+      } else {
+        score -= 20; // High deadfreight
+      }
+
+      // 3. Readiness status
+      if (hull.status === "READY_NOW") score += 15;
+      else if (hull.status === "BALLAST_TRANSIT") score += 10;
+
+      // 4. Machinery Health Score
+      score += ((hull.health || 95) - 90);
+
+      const finalScore = Math.min(99, Math.max(35, Math.round(score)));
+
+      return {
+        ...hull,
+        numDwt,
+        draftM: draft,
+        draftDiff: draftDiff.toFixed(1),
+        isDraftSafe: draftDiff >= 0,
+        utilizationPct: Math.round(utilization * 100),
+        matchScore: finalScore
+      };
+    });
+
+    scored.sort((a, b) => b.matchScore - a.matchScore);
+    const best = scored[0];
+
+    const rationale = isVlocReq
+      ? `Top AI Recommendation (${best.matchScore}% Match): Very Large Ore Carrier (${best.name}, ${best.numDwt.toLocaleString()} DWT) allocated for ultra-heavy ${qty.toLocaleString()} MT parcel with ${best.utilizationPct}% hold efficiency. ${portMaxDraft < best.draftM ? `Handled via offshore transshipment / deepwater anchorage as port draft is ${portMaxDraft}m.` : `Direct fairway berthing at ${destPort} (${portMaxDraft}m draft).`}`
+      : isCapeReq
+      ? `Top AI Recommendation (${best.matchScore}% Match): Capesize Bulker (${best.name}, ${best.numDwt.toLocaleString()} DWT) allocated for ${qty.toLocaleString()} MT parcel with ${best.utilizationPct}% hold efficiency. ${portMaxDraft < best.draftM ? `Coordinated with deepwater outer anchorage / lightering at ${destPort} (${portMaxDraft}m draft limit).` : `Direct deepwater berth at ${destPort} (${portMaxDraft}m draft).`}`
+      : `Top AI Recommendation (${best.matchScore}% Match): ${best.category} (${best.numDwt.toLocaleString()} DWT) fits ${qty.toLocaleString()} MT ${req?.cargoType || 'Cargo'} with ${best.utilizationPct}% hold efficiency. Laden draft of ${best.draftM}m safely clears ${destPort} port (${portMaxDraft}m max, +${best.draftDiff}m underkeel margin). Positioned at ${best.location}.`;
+
+    return {
+      bestVessel: best,
+      rankedHulls: scored,
+      rationale
+    };
+  };
+
   const filteredRequirements = requirements.filter(r => {
     if (filterStatus === "PENDING" && r.status !== "PENDING_REVIEW") return false;
     if (filterStatus === "ACCEPTED" && r.status !== "ACCEPTED") return false;
@@ -68,6 +183,10 @@ export default function ContractorConfirmationDashboard() {
   // Handle Accept
   const handleConfirmAccept = () => {
     if (!selectedReq) return;
+    if (!selectedReq?.cargoQuantity || Number(selectedReq.cargoQuantity) < 1000) {
+      toast.error("Cannot confirm fixture: Requirement has invalid cargo quantity (minimum 1,000 MT required).");
+      return;
+    }
     try {
       const vesselObj = (shipbuilderHulls || []).find(v => v.name === selectedVesselName) || {
         name: selectedVesselName || "MV Bengal Voyager",
@@ -222,8 +341,10 @@ export default function ContractorConfirmationDashboard() {
             <span>TOTAL VOLUME</span>
             <TrendingUp size={15} className="text-slate-600" />
           </div>
-          <div className="text-2xl font-black text-slate-900 mt-1">378,000 MT</div>
-          <div className="text-[10px] text-slate-500 mt-0.5">Under tender negotiation</div>
+          <div className="text-2xl font-black text-slate-900 mt-1">
+            {requirements.reduce((acc, r) => acc + (Number(r.cargoQuantity) || 0), 0).toLocaleString()} MT
+          </div>
+          <div className="text-[10px] text-slate-500 mt-0.5">Real company tender volume</div>
         </div>
       </div>
 
@@ -310,9 +431,15 @@ export default function ContractorConfirmationDashboard() {
         {/* Requirements Cards List */}
         <div className="space-y-3">
           {filteredRequirements.length === 0 ? (
-            <div className="p-12 text-center bg-white rounded-xl border border-slate-200 text-slate-500 font-mono text-xs">
-              <Building2 size={32} className="mx-auto text-slate-300 mb-2" />
-              <div>No requirements found matching current filter.</div>
+            <div className="p-12 text-center bg-white rounded-xl border border-slate-200 text-slate-500 font-mono text-xs space-y-3">
+              <div className="w-14 h-14 mx-auto rounded-full bg-blue-50 text-blue-900 grid place-items-center">
+                <Ship size={26} />
+              </div>
+              <div className="font-extrabold text-sm text-slate-800">No Shipping Requirements Issued Yet</div>
+              <div className="max-w-md mx-auto text-slate-500 leading-relaxed text-[11px]">
+                This desk displays authentic requirements issued by corporate shippers (e.g. Jindal Steel, Tata Steel).
+                Switch to the <strong className="text-slate-900">COMPANY</strong> workspace in the topbar to issue a shipment requirement in the New Shipment Wizard.
+              </div>
             </div>
           ) : (
             filteredRequirements.map((req) => {
@@ -392,9 +519,53 @@ export default function ContractorConfirmationDashboard() {
                       {/* Preferred Vessel Specs */}
                       <div className="flex flex-wrap items-center gap-2 font-mono text-[11px] text-slate-500 pt-1">
                         <span>Class: <strong className="text-slate-700">{req.preferredVesselCategory}</strong></span>
-                        <span>· Draft Limit: <strong className="text-slate-700">{req.maxDraftM || "14.0"}m</strong></span>
+                        <span>· Port Draft Limit: <strong className="text-slate-700">{EAST_COAST_DRAFT_LIMITS[req.destinationPort] || req.maxDraftM || "14.5"}m</strong></span>
                         <span>· Contact: <strong className="text-slate-700">{req.contactPerson || "Commercial Desk"}</strong></span>
                       </div>
+
+                      {/* AI Step 2: System Predicted Best Vessel for this Requirement */}
+                      {isPending && (() => {
+                        const prediction = predictBestVesselForReq(req);
+                        return (
+                          <div className="mt-2.5 p-3 rounded-xl bg-gradient-to-r from-blue-50/90 via-indigo-50/60 to-slate-50 border border-blue-200 shadow-xs space-y-1.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[11px] font-mono font-bold text-blue-900 flex items-center gap-1.5">
+                                <Sparkles size={13} className="text-amber-500 animate-pulse" />
+                                ASTRA AI PREDICTED BEST VESSEL (STEP 2 ALLOCATION)
+                              </span>
+                              <span className="text-[10px] font-mono font-black text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
+                                {prediction.bestVessel.matchScore}% MATCH SCORE
+                              </span>
+                            </div>
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <div>
+                                <div className="text-xs font-mono font-extrabold text-slate-900 flex items-center gap-2">
+                                  <span>{prediction.bestVessel.name}</span>
+                                  <span className="text-[11px] font-normal text-slate-500 font-sans">
+                                    ({prediction.bestVessel.category} · {prediction.bestVessel.numDwt.toLocaleString()} DWT · Draft {prediction.bestVessel.draftM}m)
+                                  </span>
+                                </div>
+                                <div className="text-[11px] text-slate-600 font-sans mt-0.5 leading-snug">
+                                  {prediction.rationale}
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedReq(req);
+                                  setSelectedVesselName(prediction.bestVessel.name);
+                                  setAcceptNote(`Allocated AI-predicted ${prediction.bestVessel.name} (${prediction.bestVessel.category}) with ${prediction.bestVessel.matchScore}% payload & draft compatibility.`);
+                                  setActiveModal("ACCEPT");
+                                }}
+                                className="shrink-0 px-3 py-1.5 rounded-lg bg-blue-900 hover:bg-blue-800 text-white font-mono text-[11px] font-bold flex items-center gap-1.5 shadow cursor-pointer transition active:scale-95"
+                              >
+                                <Check size={13} />
+                                <span>Allocate {prediction.bestVessel.name}</span>
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
 
                     {/* Right: Decision Status & Quick Action Buttons */}
@@ -431,16 +602,17 @@ export default function ContractorConfirmationDashboard() {
                       <div className="flex flex-wrap items-center gap-2">
                         <button
                           onClick={() => {
+                            const pred = predictBestVesselForReq(req);
                             setSelectedReq(req);
-                            setSelectedVesselName(shipbuilderHulls?.[0]?.name || "MV Bengal Voyager");
-                            setAcceptNote(`Laycan window confirmed for ${req.requiredArrivalDate}. Allocated from Tata NYK ballast fleet.`);
+                            setSelectedVesselName(pred.bestVessel.name);
+                            setAcceptNote(`Allocated AI-predicted ${pred.bestVessel.name} (${pred.bestVessel.category}) with ${pred.bestVessel.matchScore}% payload & draft compatibility.`);
                             setActiveModal("ACCEPT");
                           }}
                           className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-mono text-xs font-black flex items-center gap-1 shadow cursor-pointer transition-all"
                           title="Accept and allocate vessel"
                         >
                           <Check size={13} />
-                          <span>Accept</span>
+                          <span>Accept & Confirm</span>
                         </button>
 
                         <button
@@ -541,22 +713,48 @@ export default function ContractorConfirmationDashboard() {
             </div>
 
             <div className="space-y-3">
+              {/* Highlight the AI Predicted Best Vessel */}
+              {(() => {
+                const modalPred = predictBestVesselForReq(selectedReq);
+                return (
+                  <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 space-y-1">
+                    <div className="flex items-center justify-between text-[11px]">
+                      <span className="font-bold text-blue-900 flex items-center gap-1">
+                        <Sparkles size={12} className="text-amber-500" />
+                        ASTRA AI PREDICTED BEST MATCH
+                      </span>
+                      <span className="font-bold text-emerald-800 bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-300">
+                        {modalPred.bestVessel.matchScore}% MATCH SCORE
+                      </span>
+                    </div>
+                    <div className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
+                      <span>{modalPred.bestVessel.name}</span>
+                      <span className="text-slate-500 font-normal">({modalPred.bestVessel.category} · {modalPred.bestVessel.numDwt.toLocaleString()} DWT)</span>
+                    </div>
+                    <div className="text-[10.5px] text-slate-600 font-sans leading-snug">
+                      {modalPred.rationale}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div>
-                <label className="text-slate-600 font-bold block mb-1">Select Available Vessel from Fleet / Shipbuilder:</label>
+                <label className="text-slate-600 font-bold block mb-1">Select Vessel to Allocate for Fixture:</label>
                 <select
                   value={selectedVesselName}
-                  onChange={(e) => setSelectedVesselName(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedVesselName(e.target.value);
+                    const pred = predictBestVesselForReq(selectedReq);
+                    const chosen = pred.rankedHulls.find(h => h.name === e.target.value);
+                    if (chosen) {
+                      setAcceptNote(`Allocated ${chosen.name} (${chosen.category}) for ${selectedReq.companyName}. Draft ${chosen.draftM}m verified for ${selectedReq.destinationPort}.`);
+                    }
+                  }}
                   className="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 font-bold text-slate-900 focus:outline-none"
                 >
-                  {(shipbuilderHulls && shipbuilderHulls.length > 0 ? shipbuilderHulls : [
-                    { name: "MV Bengal Voyager", category: "Panamax", dwt: "74,000 DWT", location: "Newcastle / Paradip" },
-                    { name: "MV Jag Radha", category: "Panamax", dwt: "76,500 DWT", location: "Singapore Ballast" },
-                    { name: "MV Coastal Pride", category: "Supramax", dwt: "58,000 DWT", location: "Visakhapatnam Harbor" },
-                    { name: "MV Vishva Nidhi", category: "Capesize", dwt: "180,000 DWT", location: "Cochin Shipyard Drydock" },
-                    { name: "MV Chennai Express", category: "Handysize", dwt: "35,000 DWT", location: "Chennai Anchorage" }
-                  ]).map((h) => (
+                  {predictBestVesselForReq(selectedReq).rankedHulls.map((h, idx) => (
                     <option key={h.name} value={h.name}>
-                      {h.name} ({h.category} · {h.dwt} · {h.location})
+                      {idx === 0 ? "⭐ [AI BEST FIT] " : ""}{h.name} ({h.category} · {h.numDwt.toLocaleString()} DWT · {h.matchScore}% Match · {h.location})
                     </option>
                   ))}
                 </select>
@@ -574,7 +772,7 @@ export default function ContractorConfirmationDashboard() {
               </div>
 
               <div className="p-3 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200 text-[11px]">
-                ⚡ <strong>Real-time Synchronized Action:</strong> Accepting this requirement will automatically notify {selectedReq.companyName} and authorize the first-mile and ocean logistics corridor.
+                ⚡ <strong>Real-time Synchronized Action:</strong> Accepting this requirement will automatically notify {selectedReq.companyName}, update Vessel Health with chartered company details, and authorize the ocean logistics corridor.
               </div>
             </div>
 

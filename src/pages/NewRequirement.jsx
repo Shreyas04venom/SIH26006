@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import Badge from "../components/Badge";
 import TopDownVesselIcon, { TopDownTruckSvg } from "../components/VesselIcons";
@@ -12,7 +12,7 @@ import {
   Ship, TrendingUp, Anchor, CheckCircle2, ArrowRight, ArrowLeft, 
   Sparkles, ShieldCheck, HeartPulse, Truck, Factory, MapPin, 
   Award, Clock, DollarSign, FileCheck, Layers, AlertTriangle, Calendar, Sliders, Info,
-  BarChart3, LineChart as LineIcon, PieChart as PieIcon, Cpu
+  BarChart3, LineChart as LineIcon, PieChart as PieIcon, Cpu, Printer, Download, FileText, Building2
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -40,7 +40,7 @@ const ORIGIN_OPTIONS = [
   { port: "Port Hedland", country: "Australia", warehouse: "Pilbara Iron Siding, WA", distNm: 3650 },
 ];
 
-// Exact Physical Specifications for all 4 Vessel Categories (DWT, Beam, LOA, Draft)
+// Exact Physical Specifications for all 5 Vessel Categories (DWT, Beam, LOA, Draft)
 const VESSEL_SPECS = {
   Handysize: {
     dwt: 35000,
@@ -82,9 +82,20 @@ const VESSEL_SPECS = {
     loa: 300,
     draft: 18.2,
     speedKnots: 14.5,
-    desc: "100k–200k+ DWT · Max Beam 45m · Max LOA 300m · Draft 18.2m",
+    desc: "100k–200k DWT · Max Beam 45m · Max LOA 300m · Draft 18.2m",
     ratePerTon: 11.40,
     demurrage: 1800
+  },
+  VLOC: {
+    dwt: 320000,
+    avgPayload: 300000,
+    beam: 55.0,
+    loa: 340,
+    draft: 21.5,
+    speedKnots: 14.5,
+    desc: "200k–400k DWT · Very Large Ore Carrier (VLOC / Valemax) · Draft 21.5m",
+    ratePerTon: 9.20,
+    demurrage: 2400
   }
 };
 
@@ -95,12 +106,12 @@ export default function NewRequirement() {
 
   const [step, setStep] = useState(1);
 
-  // Form State: Parameters in Step 1
-  const [cargoType, setCargoType] = useState("Thermal Coal");
-  const [preferredVesselCategory, setPreferredVesselCategory] = useState("Panamax");
-  const [cargoQuantity, setCargoQuantity] = useState(70000);
-  const [originPort, setOriginPort] = useState("Newcastle");
-  const [destPort, setDestPort] = useState("Paradip");
+  // Form State: Parameters in Step 1 (Company input) - Unselected by default
+  const [companyName, setCompanyName] = useState(user?.name || "");
+  const [cargoType, setCargoType] = useState("");
+  const [cargoQuantity, setCargoQuantity] = useState("");
+  const [originPort, setOriginPort] = useState("");
+  const [destPort, setDestPort] = useState("");
   
   // Delivery & Contract Structure Parameters
   const todayStr = new Date().toISOString().split("T")[0];
@@ -111,6 +122,42 @@ export default function NewRequirement() {
     return d.toISOString().split("T")[0];
   });
   const [expectedVoyages, setExpectedVoyages] = useState(1);
+  // Logistics Operator Strategy: "single" (Turnkey / Same at Origin & Destination) vs "multiple" (Specialized Leg-by-Leg Split)
+  const [logisticsModel, setLogisticsModel] = useState("single");
+
+  // Automatically predict best vessel size class based on East Coast port draft and cargo volume
+  const predictedVesselCategory = useMemo(() => {
+    const portInfo = EAST_COAST_DESTINATIONS.find(d => d.port === destPort) || EAST_COAST_DESTINATIONS[0];
+    const qty = Math.max(1000, Number(cargoQuantity) || 70000);
+    const isSpot = contractDuration === "1 voyage (Spot)";
+    const voyages = isSpot ? 1 : Math.max(1, expectedVoyages);
+    const parcelSize = Math.round(qty / voyages);
+    const portDraft = portInfo.maxDraft;
+    const portLoa = portInfo.maxLoa;
+
+    // 1. Ultra-high parcel volumes (200k+ MT) strictly require Very Large Ore Carrier (VLOC / Valemax)
+    if (parcelSize >= 200000) {
+      return "VLOC";
+    }
+
+    // 2. Heavy bulk parcels (95,000 MT to 199,999 MT, such as 150k MT preset) predict Capesize
+    if (parcelSize >= 95000 || (!isSpot && qty >= 250000 && parcelSize >= 85000)) {
+      return "Capesize";
+    }
+
+    // 3. Draft & river fairway restrictions for smaller parcels
+    if (portDraft < 10.5 || portLoa < 205) {
+      return "Handysize";
+    } else if (portDraft < 13.8 || portLoa < 235) {
+      return parcelSize <= 38000 ? "Handysize" : "Supramax";
+    } else {
+      if (parcelSize <= 40000) return "Handysize";
+      if (parcelSize <= 62000) return "Supramax";
+      return "Panamax";
+    }
+  }, [destPort, cargoQuantity, contractDuration, expectedVoyages]);
+
+  const preferredVesselCategory = predictedVesselCategory;
 
   const handleArrivalDateChange = (val) => {
     if (val < todayStr) {
@@ -144,8 +191,14 @@ export default function NewRequirement() {
     let chosenCategory = "Panamax";
     let rationale = "";
 
-    // 1. HARD PHYSICAL BERTH & CHANNEL CONSTRAINTS
-    if (portDraft < 10.5 || portLoa < 205) {
+    // 1. CARGO PARCEL VOLUME & VESSEL CLASS DETERMINATION
+    if (parcelSize >= 200000) {
+      chosenCategory = "VLOC";
+      rationale = `Very Large Ore Carrier (VLOC / Valemax 320k DWT) selected: Maximum economies of scale for ultra-heavy ${parcelSize.toLocaleString()} MT parcel at lowest benchmark freight ($9.20/t). ${portDraft < 21.0 ? `Note: Discharge at ${portInfo.port} (${portDraft}m draft) utilizes offshore deepwater transshipment / lightering.` : `Direct deepwater channel clearance at ${portInfo.port}.`}`;
+    } else if (parcelSize >= 95000 || (!isSpot && qty >= 250000 && parcelSize >= 85000)) {
+      chosenCategory = "Capesize";
+      rationale = `Capesize (160k MT payload) selected: Optimal efficiency for ${parcelSize.toLocaleString()} MT cargo at $11.40/t. ${portDraft < 17.5 ? `Note: Berthing at ${portInfo.port} (${portDraft}m draft) supported via deepwater outer roads / lightering.` : `Direct deepwater berthing at ${portInfo.port} (${portDraft}m draft).`}`;
+    } else if (portDraft < 10.5 || portLoa < 205) {
       // Shallow riverine ports (Kolkata 8.5m, Haldia 9.0m)
       chosenCategory = "Handysize";
       if (parcelSize > 40000) {
@@ -162,14 +215,6 @@ export default function NewRequirement() {
         chosenCategory = "Supramax";
         rationale = `Supramax (55k MT payload) selected: Maximum allowable class for ${portInfo.port}'s ${portDraft}m draft; Panamax (13.8m) exceeds draft limits.`;
       }
-    } else if (portDraft >= 17.5 && portLoa >= 300 && (parcelSize >= 95000 || (!isSpot && qty >= 250000 && parcelSize >= 85000))) {
-      // Deepwater terminals (Dhamra 18m, Gangavaram 18.5m, Krishnapatnam 18m)
-      chosenCategory = "Capesize";
-      rationale = `Capesize (160k MT payload) selected: Deepwater ${portInfo.port} (${portDraft}m draft) easily berths 18.2m Capesize, unlocking scale economics at $11.40/t for ${parcelSize.toLocaleString()} MT.`;
-    } else if (portDraft < 17.5 && parcelSize > 85000) {
-      // High volume parcel, but port cannot berth Capesize (18.2m draft)
-      chosenCategory = "Panamax";
-      rationale = `Panamax selected: Capesize (18.2m draft) cannot berth at ${portInfo.port} (${portDraft}m limit); Panamax (74k MT) is the maximum permissible class (split into sequential voyages).`;
     } else {
       // Standard East Coast ports (Paradip 14.5m, Ennore 15m, Vizag 16.5m, Chennai 14m, Tuticorin 14m)
       if (parcelSize <= 40000) {
@@ -239,11 +284,12 @@ export default function NewRequirement() {
 
   // 3. Dynamic auto-adjustment & validation: When Cargo Quantity changes (unclamped so AI can evaluate actual user intent)
   const handleQuantityChange = (qty) => {
-    const num = Math.max(0, Number(qty));
-    setCargoQuantity(num);
+    const rawVal = qty === "" ? "" : Math.max(0, Number(qty));
+    setCargoQuantity(rawVal);
+    const num = Number(qty) || 0;
     if (contractDuration !== "1 voyage (Spot)") {
       const spec = VESSEL_SPECS[preferredVesselCategory];
-      setExpectedVoyages(Math.max(1, Math.ceil(num / spec.avgPayload)));
+      setExpectedVoyages(Math.max(1, Math.ceil(Math.max(1000, num) / spec.avgPayload)));
     }
   };
 
@@ -259,10 +305,20 @@ export default function NewRequirement() {
     const isDraftExceeded = spec.draft > dest.maxDraft;
     const isLoaExceeded = spec.loa > dest.maxLoa;
     const isSpot = contractDuration === "1 voyage (Spot)";
+    const qty = Number(cargoQuantity) || 0;
+
+    let warning = null;
+    if (qty <= 0) {
+      warning = "Cargo quantity is 0 MT! Commercial vessel fixture cannot proceed without cargo payload (min 1,000 MT).";
+      return { isDraftExceeded: false, isLoaExceeded: false, isOvercapacity: false, isUnderutilized: false, warning };
+    } else if (qty < 1000) {
+      warning = "Parcel volume is below the 1,000 MT commercial minimum for dry-bulk chartering.";
+      return { isDraftExceeded: false, isLoaExceeded: false, isOvercapacity: false, isUnderutilized: false, warning };
+    }
+
     const isOvercapacity = isSpot && cargoQuantity > spec.dwt;
     const isUnderutilized = isSpot && cargoQuantity < spec.avgPayload * 0.45;
 
-    let warning = null;
     if (isDraftExceeded) {
       warning = `${preferredVesselCategory} draft (${spec.draft}m) exceeds ${destPort}'s max allowable depth (${dest.maxDraft}m). Vessel cannot berth safely!`;
     } else if (isLoaExceeded) {
@@ -323,22 +379,46 @@ export default function NewRequirement() {
     const wh1 = candidateWarehousesList[0];
     const wh2 = candidateWarehousesList[1] || wh1;
     const wh3 = candidateWarehousesList[2] || wh1;
+    const isSingle = logisticsModel === "single";
 
     // PLAN 01: OPTIMAL
-    const firstMileCost1 = Math.round(cargoQuantity * 1.20);
+    const firstMileCost1 = Math.round(cargoQuantity * (isSingle ? 1.20 : 1.12));
     const oceanCost1 = Math.round(cargoQuantity * spec.ratePerTon);
     const portCost1 = Math.round(cargoQuantity * 0.60);
     const lastMileCost1 = Math.round(cargoQuantity * wh1.inlandFreightUsd);
     const landedTotal1 = firstMileCost1 + oceanCost1 + portCost1 + lastMileCost1;
 
+    const originSpecialist1 = activeOrigin.country === "Australia" 
+      ? "Hunter Valley Rail & Haulage" 
+      : activeOrigin.country === "Indonesia" 
+      ? "Kalimantan Coal Drayage Ltd" 
+      : "Trans-Island Bulk Drayage";
+
     const plan01 = {
       planId: "PLAN-01",
       label: "PLAN 01",
-      tag: "RECOMMENDED (OPTIMAL EXECUTION)",
+      tag: isSingle ? "RECOMMENDED (SINGLE TURNKEY)" : "RECOMMENDED (BEST-OF-BREED SPLIT)",
       rank: 1,
       isRecommended: true,
+      operatorModel: isSingle ? "SINGLE_OPERATOR" : "MULTI_OPERATOR",
+      operatorModelTitle: isSingle ? "Single Unified Operator (End-to-End Turnkey)" : "Multiple Specialized Operators (Best-of-Breed Split)",
+      contractor: isSingle ? {
+        id: "TATA_NYK",
+        name: "Tata NYK Integrated Multimodal Logistics",
+        roadTransporter: "Tata NYK Intermodal Fleet",
+        reliability: "98.8%"
+      } : {
+        id: "MULTI_TIER1",
+        name: "Tier-1 Multi-Carrier Consortium",
+        roadTransporter: "Intermodal Road Express",
+        reliability: "97.6%"
+      },
+      originOperator: isSingle ? "Tata NYK Global Drayage Wing" : originSpecialist1,
+      oceanCarrier: "Tata NYK Shipping Line",
+      lastMileOperator: isSingle ? "Tata NYK Domestic Express Logistics" : "Intermodal Road Express (NH-53 Heavy Fleet)",
+      handoffRisk: isSingle ? "ZERO (Unified SLA)" : "MANAGED (API Coordinated)",
       vessel: {
-        name: vcat === "Capesize" ? "MV Tata Titan" : vcat === "Supramax" ? "MV Tata Pride" : vcat === "Handysize" ? "MV Tata Pearl" : "MV Bengal Voyager",
+        name: vcat === "VLOC" ? "MV Berge Everest (VLOC)" : vcat === "Capesize" ? "MV Tata Titan" : vcat === "Supramax" ? "MV Tata Pride" : vcat === "Handysize" ? "MV Tata Pearl" : "MV Bengal Voyager",
         category: vcat,
         dwt: spec.dwt,
         draftM: spec.draft,
@@ -351,26 +431,20 @@ export default function NewRequirement() {
         age: "4.2 Years",
         rightShipRating: 5,
         flag: "Panama",
-        dailyFuelBurn: vcat === "Capesize" ? "48.5 MT/day" : vcat === "Supramax" ? "24.2 MT/day" : "31.8 MT/day"
+        dailyFuelBurn: vcat === "VLOC" ? "58.0 MT/day" : vcat === "Capesize" ? "48.5 MT/day" : vcat === "Supramax" ? "24.2 MT/day" : "31.8 MT/day"
       },
       origin: `${originPort}, ${activeOrigin.country}`,
       originPort,
       originWarehouse: activeOrigin.warehouse,
       destinationPort: destPort,
       destinationWarehouse: wh1,
-      contractor: {
-        id: "TATA_NYK",
-        name: "Tata NYK Shipping",
-        roadTransporter: "Intermodal Road Express",
-        reliability: "98.4%"
-      },
       inlandRoute: `${activeOrigin.warehouse} ➔ ${originPort} Port ➔ ${destPort} Port ➔ ${wh1.name}`,
       estimatedOceanTransitDays: activeOrigin.distNm ? (activeOrigin.distNm / (13.8 * 24)).toFixed(1) : 15.5,
       eta: requiredArrivalDate,
       oceanFreightRatePerTon: spec.ratePerTon,
       totalLandedCostUsd: landedTotal1,
       landedCostPerTonUsd: (landedTotal1 / cargoQuantity).toFixed(2),
-      savingsUsd: Math.round(cargoQuantity * 0.89),
+      savingsUsd: Math.round(cargoQuantity * (isSingle ? 0.89 : 1.18)),
       portWaiting: `${activeDest.waitHours || 12} hrs estimated queue`,
       portWaitingHours: activeDest.waitHours || 12,
       demurrageRisk: "LOW",
@@ -384,7 +458,9 @@ export default function NewRequirement() {
       portHandlingCostUsd: portCost1,
       roadFreightCostUsd: lastMileCost1,
       demurragePerHourUsd: spec.demurrage,
-      recommendationReason: `Top tier match for ${destPort} with Grade A Engine Health (98.2%), 5-Star RightShip Safety rating, top-ranked warehouse (${wh1.code}: ${wh1.score}%), and lowest landed cost.`
+      recommendationReason: isSingle
+        ? `Top tier single operator match: Tata NYK manages overseas loading, ocean transit, and Indian plant delivery under a unified SLA with zero handoff delay.`
+        : `Optimal multi-operator synergy: Achieves lowest landed cost by pairing local siding haulage at origin with Tata NYK deepsea shipping and dedicated destination tippers.`
     };
 
     // PLAN 02: BALANCED ALTERNATIVE
@@ -397,11 +473,28 @@ export default function NewRequirement() {
     const plan02 = {
       planId: "PLAN-02",
       label: "PLAN 02",
-      tag: "BALANCED ALTERNATIVE",
+      tag: isSingle ? "BALANCED ALTERNATIVE (SINGLE OPERATOR)" : "BALANCED ALTERNATIVE (MULTI-OPERATOR)",
       rank: 2,
       isRecommended: false,
+      operatorModel: isSingle ? "SINGLE_OPERATOR" : "MULTI_OPERATOR",
+      operatorModelTitle: isSingle ? "Single Unified Operator (Turnkey Alternative)" : "Multiple Specialized Operators (Leg Split)",
+      contractor: isSingle ? {
+        id: "JSW_GLOBAL",
+        name: "JSW Integrated Logistics Ltd",
+        roadTransporter: "JSW Intermodal Fleet",
+        reliability: "95.2%"
+      } : {
+        id: "MULTI_BALANCED",
+        name: "Pacific-JSW-Eastern Multi-Operator Split",
+        roadTransporter: "Eastern Coastal Fleet",
+        reliability: "94.2%"
+      },
+      originOperator: isSingle ? "JSW Overseas Logistics Network" : "Pacific Drayage & Mining Transport",
+      oceanCarrier: "JSW Shipping Ltd",
+      lastMileOperator: isSingle ? "JSW Coastal & Inland Transport" : "Eastern Coastal Logistics Fleet",
+      handoffRisk: isSingle ? "LOW (Single Contract)" : "MODERATE (2 Handshake Points)",
       vessel: {
-        name: vcat === "Capesize" ? "MV JSW Steel Bulk" : vcat === "Supramax" ? "MV Coastal Pride" : vcat === "Handysize" ? "MV JSW Express" : "MV JSW Vamsi",
+        name: vcat === "VLOC" ? "MV Ore Brasil (VLOC)" : vcat === "Capesize" ? "MV JSW Steel Bulk" : vcat === "Supramax" ? "MV Coastal Pride" : vcat === "Handysize" ? "MV JSW Express" : "MV JSW Vamsi",
         category: vcat,
         dwt: spec.dwt,
         draftM: spec.draft - 0.4,
@@ -414,26 +507,20 @@ export default function NewRequirement() {
         age: "8.5 Years",
         rightShipRating: 4,
         flag: "Marshall Islands",
-        dailyFuelBurn: vcat === "Capesize" ? "52.0 MT/day" : "33.5 MT/day"
+        dailyFuelBurn: vcat === "VLOC" ? "62.0 MT/day" : vcat === "Capesize" ? "52.0 MT/day" : "33.5 MT/day"
       },
       origin: `${originPort}, ${activeOrigin.country}`,
       originPort,
       originWarehouse: activeOrigin.warehouse,
       destinationPort: destPort,
       destinationWarehouse: wh2,
-      contractor: {
-        id: "JSW_SHIPPING",
-        name: "JSW Shipping Ltd",
-        roadTransporter: "Eastern Coastal Fleet",
-        reliability: "94.2%"
-      },
       inlandRoute: `${activeOrigin.warehouse} ➔ ${originPort} Port ➔ ${destPort} Port ➔ ${wh2.name}`,
       estimatedOceanTransitDays: (Number(plan01.estimatedOceanTransitDays) + 0.6).toFixed(1),
       eta: requiredArrivalDate,
       oceanFreightRatePerTon: spec.ratePerTon + 1.20,
       totalLandedCostUsd: landedTotal2,
       landedCostPerTonUsd: (landedTotal2 / cargoQuantity).toFixed(2),
-      savingsUsd: Math.round(cargoQuantity * 0.35),
+      savingsUsd: Math.round(cargoQuantity * (isSingle ? 0.35 : 0.62)),
       portWaiting: `${(activeDest.waitHours || 12) + 2} hrs queue`,
       portWaitingHours: (activeDest.waitHours || 12) + 2,
       demurrageRisk: "MEDIUM",
@@ -447,7 +534,9 @@ export default function NewRequirement() {
       portHandlingCostUsd: portCost2,
       roadFreightCostUsd: lastMileCost2,
       demurragePerHourUsd: spec.demurrage + 150,
-      recommendationReason: `Alternative route utilizing ${wh2.name} (${wh2.code}) with secondary fleet spot positioning and high storage capacity.`
+      recommendationReason: isSingle
+        ? `Integrated single operator alternative with high warehouse headroom at ${wh2.name} and dedicated industrial rakes.`
+        : `Multi-operator balance utilizing regional siding transporters and secondary spot chartering to optimize backhaul capacity.`
     };
 
     // PLAN 03: CONTINGENCY BUFFER
@@ -460,11 +549,28 @@ export default function NewRequirement() {
     const plan03 = {
       planId: "PLAN-03",
       label: "PLAN 03",
-      tag: "BUFFER CONTINGENCY",
+      tag: isSingle ? "BUFFER CONTINGENCY (SINGLE OPERATOR)" : "BUFFER CONTINGENCY (MULTI-OPERATOR)",
       rank: 3,
       isRecommended: false,
+      operatorModel: isSingle ? "SINGLE_OPERATOR" : "MULTI_OPERATOR",
+      operatorModelTitle: isSingle ? "Single Unified Operator (Buffer Turnkey)" : "Multiple Specialized Operators (Buffer Split)",
+      contractor: isSingle ? {
+        id: "ADANI_INTERMODAL",
+        name: "Adani Integrated Port & Rail Logistics",
+        roadTransporter: "Adani Rail Express",
+        reliability: "93.4%"
+      } : {
+        id: "MULTI_BUFFER",
+        name: "Trans-Mineral & Synergy Multi-Operator Split",
+        roadTransporter: "National Highway Logistics",
+        reliability: "91.8%"
+      },
+      originOperator: isSingle ? "Adani International Bulk Freight" : "Trans-Mineral Freight Co.",
+      oceanCarrier: "Synergy Marine Group",
+      lastMileOperator: isSingle ? "Adani Agri-Bulk & Rail Logistics" : "National Highway Logistics",
+      handoffRisk: isSingle ? "LOW (Single Contract)" : "MODERATE (Buffer Holding)",
       vessel: {
-        name: vcat === "Capesize" ? "MV Ocean Giant" : vcat === "Supramax" ? "MV Ocean Leader" : vcat === "Handysize" ? "MV Island Trader" : "MV Ocean Pioneer",
+        name: vcat === "VLOC" ? "MV Pacific Winner (VLOC)" : vcat === "Capesize" ? "MV Ocean Giant" : vcat === "Supramax" ? "MV Ocean Leader" : vcat === "Handysize" ? "MV Island Trader" : "MV Ocean Pioneer",
         category: vcat,
         dwt: spec.dwt + 2000,
         draftM: spec.draft + 0.3,
@@ -477,26 +583,20 @@ export default function NewRequirement() {
         age: "11.8 Years",
         rightShipRating: 4,
         flag: "Liberia",
-        dailyFuelBurn: vcat === "Capesize" ? "55.0 MT/day" : "35.2 MT/day"
+        dailyFuelBurn: vcat === "VLOC" ? "65.0 MT/day" : vcat === "Capesize" ? "55.0 MT/day" : "35.2 MT/day"
       },
       origin: `${originPort}, ${activeOrigin.country}`,
       originPort,
       originWarehouse: activeOrigin.warehouse,
       destinationPort: destPort,
       destinationWarehouse: wh3,
-      contractor: {
-        id: "SYNERGY_MARINE",
-        name: "Synergy Marine Group",
-        roadTransporter: "National Highway Logistics",
-        reliability: "91.8%"
-      },
       inlandRoute: `${activeOrigin.warehouse} ➔ ${originPort} Port ➔ ${destPort} Port ➔ ${wh3.name}`,
       estimatedOceanTransitDays: (Number(plan01.estimatedOceanTransitDays) + 1.2).toFixed(1),
       eta: requiredArrivalDate,
       oceanFreightRatePerTon: spec.ratePerTon + 0.80,
       totalLandedCostUsd: landedTotal3,
       landedCostPerTonUsd: (landedTotal3 / cargoQuantity).toFixed(2),
-      savingsUsd: Math.round(cargoQuantity * 0.42),
+      savingsUsd: Math.round(cargoQuantity * (isSingle ? 0.42 : 0.48)),
       portWaiting: `${(activeDest.waitHours || 12) + 4} hrs queue`,
       portWaitingHours: (activeDest.waitHours || 12) + 4,
       demurrageRisk: "MEDIUM",
@@ -510,7 +610,9 @@ export default function NewRequirement() {
       portHandlingCostUsd: portCost3,
       roadFreightCostUsd: lastMileCost3,
       demurragePerHourUsd: spec.demurrage + 100,
-      recommendationReason: `Contingency allocation with flexible laycan cancellation window and buffer warehousing at ${wh3.name}.`
+      recommendationReason: isSingle
+        ? `Single-operator turnkey buffer with flexible laycan and direct rail sidings at ${wh3.name}.`
+        : `Independent leg allocation with flexible laycan and multi-transporter buffer stock holding at ${wh3.name}.`
     };
 
     return [plan01, plan02, plan03];
@@ -523,10 +625,9 @@ export default function NewRequirement() {
 
 
   // Visual Chart State for Step 3 AI Multi-Factor Analysis
-  const [aiChartTab, setAiChartTab] = useState("freight_curve"); // 'freight_curve' | 'cost_breakdown' | 'port_queue' | 'shap_factors'
+  const [aiChartTab, setAiChartTab] = useState("freight_curve"); // 'freight_curve' | 'cost_breakdown' | 'port_queue'
   const [hoveredCostCategory, setHoveredCostCategory] = useState(null);
   const [hoveredPortStage, setHoveredPortStage] = useState(null);
-  const [hoveredShapFactor, setHoveredShapFactor] = useState(null);
 
   // Dynamic Chart 1: 14-Day Freight Rate Forward Curve
   const currentSpotRate = selectedContractor.oceanFreightRatePerTon;
@@ -671,68 +772,35 @@ export default function NewRequirement() {
     }
   ];
 
-  // Dynamic Chart 4: SHAP Attribution (Mapped directly from datasets/baltic_dry_freight_historical.csv)
-  const shapFeatures = [
-    { 
-      factor: "Baltic Dry Index (BDI) Momentum", 
-      weight: 34.2, 
-      impact: "Bullish (+)",
-      column: "BDI_Index",
-      dataset: "baltic_dry_freight_historical.csv",
-      trend: "Upward trend across global dry bulk routes",
-      companyExplanation: "Global charter demand is surging. Rates will climb, making today's rate a locked-in cost advantage."
-    },
-    { 
-      factor: "Singapore VLSFO Bunker Fuel Index", 
-      weight: 23.5, 
-      impact: "Moderate (+)",
-      column: "VLSFO_Bunker_USD_Per_Ton",
-      dataset: "baltic_dry_freight_historical.csv",
-      trend: "VLSFO fuel pricing around $540/ton",
-      companyExplanation: "Higher marine fuel prices directly increase ship operating expenses; locking today caps bunker exposure."
-    },
-    { 
-      factor: "Discharge Port Anchorage Congestion", 
-      weight: 18.1, 
-      impact: "Bullish (+)",
-      column: "Current_Vessels_In_Queue",
-      dataset: "east_coast_india_port_telemetry.csv",
-      trend: `${activeDest.waitHours || 12}h queue at ${destPort} Port`,
-      companyExplanation: "Congestion at the port increases market spot premiums; ASTRA shields you with pre-reserved berths."
-    },
-    { 
-      factor: "Bay of Bengal Monsoon Wave Swell", 
-      weight: 14.4, 
-      impact: "Seasonal (+)",
-      column: "Monsoon_Wave_Height_M",
-      dataset: "baltic_dry_freight_historical.csv",
-      trend: "Seasonal swell height 1.5m–2.2m",
-      companyExplanation: "Rough sea weather adds voyage safety buffers; seasonal weather factors are factored into transit time."
-    },
-    { 
-      factor: "Origin Terminal Loading Delays", 
-      weight: 9.8, 
-      impact: "Neutral",
-      column: "Handling_TAT_Minutes",
-      dataset: "inland_multimodal_corridors.csv",
-      trend: "Pithead loading TAT: 45 min per rail/tipper unit",
-      companyExplanation: "Mine pithead handling efficiency is stable; minimal friction at the export loading stage."
-    }
-  ];
-
   // Final Execution & Confirmation
   const handleConfirmAndDispatch = () => {
+    if (!cargoQuantity || Number(cargoQuantity) <= 0) {
+      toast.error("Execution Rejected: Cargo quantity cannot be 0 tons. Minimum 1,000 MT required.");
+      setStep(1);
+      return;
+    }
+    if (Number(cargoQuantity) < 1000) {
+      toast.error("Execution Rejected: Cargo quantity must be at least 1,000 MT for commercial fixture.");
+      setStep(1);
+      return;
+    }
+
     const activePlan = executionPlans.find(p => p.planId === selectedPlanId) || executionPlans[0];
     const generatedId = `REQ-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-    const companyName = user?.name || "Jindal Steel & Power Ltd (Shipper)";
+    const effectiveCompany = companyName || user?.name || "Jindal Steel & Power Ltd (JSPL)";
 
     const finalRequirement = {
       id: generatedId,
-      companyName,
-      companyCode: "JSPL",
+      companyName: effectiveCompany,
+      companyCode: effectiveCompany.includes("Tata") ? "TATA" : effectiveCompany.includes("Vedanta") ? "VEDL" : "JSPL",
       planId: activePlan.planId,
       cargoType,
       cargoQuantity,
+      logisticsModel, // "single" | "multiple"
+      operatorModelTitle: activePlan.operatorModelTitle,
+      firstMileOperator: activePlan.originOperator,
+      oceanCarrier: activePlan.oceanCarrier,
+      lastMileOperator: activePlan.lastMileOperator,
       originWarehouse: activePlan.originWarehouse,
       originPort: activePlan.originPort,
       destinationPort: activePlan.destinationPort,
@@ -746,11 +814,19 @@ export default function NewRequirement() {
       budgetPreference,
       riskTolerance,
       selectedContractor: activePlan.contractor.name || "Tata NYK Shipping",
-      selectedVessel: activePlan.vessel,
+      selectedVessel: activePlan.vessel || {
+        name: preferredVesselCategory === "Capesize" ? "MV Cape Sun" : preferredVesselCategory === "Supramax" ? "MV Coastal Pride" : "MV Bengal Voyager",
+        category: preferredVesselCategory,
+        dwt: currentSpec.dwt,
+        draftM: currentSpec.draft,
+        loaM: currentSpec.loa,
+        beamM: currentSpec.beam
+      },
+      assignedVessel: activePlan.vessel || null,
       roadFleet: {
         firstMileTrucks: activePlan.firstMileTrucks,
         lastMileTrucks: activePlan.lastMileTrucks,
-        transporterName: activePlan.contractor.roadTransporter,
+        transporterName: activePlan.lastMileOperator || activePlan.contractor.roadTransporter,
         truckType: "40T Multi-Axle Container & Tipping Trucks"
       },
       costBreakdown: {
@@ -762,13 +838,13 @@ export default function NewRequirement() {
         totalLandedCostUsd: activePlan.totalLandedCostUsd,
         netSavingsUsd: activePlan.savingsUsd
       },
-      status: "PENDING_REVIEW",
-      contractorAccepted: false,
+      status: "ACTIVE_IN_TRANSIT",
+      contractorAccepted: true,
       timestamp: new Date().toISOString()
     };
 
     setRequirement(finalRequirement);
-    setSelectedVessel(activePlan.vessel);
+    setSelectedVessel(finalRequirement.selectedVessel);
 
     // Notify Contractor Profile in Real-Time
     if (addEvent) {
@@ -777,20 +853,20 @@ export default function NewRequirement() {
         type: "NEW_REQUIREMENT_CREATED",
         severity: "INFO",
         title: `📦 New Company Requirement: ${cargoType} (${cargoQuantity.toLocaleString()} MT)`,
-        detail: `${companyName} created a new shipping requirement for ${preferredVesselCategory} from ${activePlan.originPort} to ${activePlan.destinationPort}. Awaiting contractor review & fixture confirmation.`,
+        detail: `${effectiveCompany} created a new shipping requirement for ${preferredVesselCategory} from ${activePlan.originPort} to ${activePlan.destinationPort}. Awaiting contractor review & vessel fixture confirmation.`,
         requirementId: generatedId,
         roleRecipient: ["contractor", "company"]
       });
     }
 
-    toast.success(`Requirement ${finalRequirement.id} Dispatched to Contractor Desk! Tata NYK Contractor notified in real time.`);
+    toast.success(`Requirement ${finalRequirement.id} Dispatched to Contractor Desk! Tata NYK Contractor will allocate the AI-predicted best vessel.`);
     nav("/");
   };
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto" data-testid="new-requirement-page">
       {/* Header */}
-      <div className="flex flex-wrap items-end justify-between gap-4">
+      <div className="flex flex-wrap items-end justify-between gap-4 print:hidden">
         <div>
           <div className="flex items-center gap-2">
             <Badge kind="OPTIMIZATION" />
@@ -805,260 +881,236 @@ export default function NewRequirement() {
         </div>
 
         {/* 4-Step Progress Indicator */}
-        <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl border border-slate-200 text-xs font-mono font-bold">
-          <span className={`px-3 py-1 rounded-lg ${step === 1 ? "bg-blue-900 text-white shadow" : "text-slate-600"}`}>1. Setup & Vessel Specs</span>
-          <span className={`px-3 py-1 rounded-lg ${step === 2 ? "bg-blue-900 text-white shadow" : "text-slate-600"}`}>2. Contractor ({preferredVesselCategory})</span>
-          <span className={`px-3 py-1 rounded-lg ${step === 3 ? "bg-blue-900 text-white shadow" : "text-slate-600"}`}>3. AI Analysis</span>
-          <span className={`px-3 py-1 rounded-lg ${step === 4 ? "bg-blue-900 text-white shadow" : "text-slate-600"}`}>4. Confirm</span>
+        <div className="flex flex-wrap items-center gap-1.5 bg-slate-100/90 p-1.5 rounded-xl border border-slate-200 text-xs font-mono font-bold shadow-xs">
+          {[
+            { num: 1, label: "Cargo & Fairways" },
+            { num: 2, label: "Multimodal Plan" },
+            { num: 3, label: "AI Analysis" },
+            { num: 4, label: "Dispatch" }
+          ].map((s) => {
+            const isDone = step > s.num;
+            const isCurrent = step === s.num;
+            return (
+              <button
+                key={s.num}
+                type="button"
+                onClick={() => {
+                  if (s.num > 1 && (!cargoType || !originPort || !destPort || !cargoQuantity || Number(cargoQuantity) < 1000)) {
+                    toast.error("Please complete all required selections in Step 1 (Commodity, Origin, Destination, and Quantity >= 1,000 MT).");
+                    setStep(1);
+                    return;
+                  }
+                  if (isDone) setStep(s.num);
+                }}
+                disabled={!isDone && !isCurrent}
+                className={`px-3 py-1.5 rounded-lg flex items-center gap-1.5 transition-all ${
+                  isDone
+                    ? "bg-emerald-100 text-emerald-800 border border-emerald-300 hover:bg-emerald-200/90 cursor-pointer shadow-xs"
+                    : isCurrent
+                    ? "bg-blue-900 text-white shadow-md cursor-default ring-2 ring-blue-900/30"
+                    : "text-slate-400 bg-transparent cursor-not-allowed"
+                }`}
+                title={isDone ? `Jump back to Step ${s.num}: ${s.label}` : undefined}
+              >
+                {isDone ? (
+                  <CheckCircle2 size={13} className="text-emerald-700 shrink-0" />
+                ) : (
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] ${
+                    isCurrent ? "bg-white/20 text-white font-bold" : "bg-slate-200 text-slate-500"
+                  }`}>
+                    {s.num}
+                  </span>
+                )}
+                <span>{s.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
       {/* ========================================================================= */}
-      {/* STEP 1: REQUIREMENT, VESSEL SPECS (BEAM/LOA/DRAFT) & CONTRACT PARAMETERS */}
+      {/* STEP 1: CARGO, FAIRWAY (ORIGIN/DESTINATION) & DELIVERY SCHEDULE */}
       {/* ========================================================================= */}
       {step === 1 && (
         <div className="astra-card p-6 space-y-6 animate-in fade-in">
-          <div className="border-b border-slate-100 pb-3">
-            <h2 className="text-lg font-extrabold text-slate-900" style={{ fontFamily: "Manrope" }}>
-              Step 1: Cargo, Preferred Vessel Specifications & Contract Structure
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Select vessel size class (includes Beam, LOA, Draft limits) and specify delivery contract parameters.
-            </p>
+          <div className="border-b border-slate-100 pb-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <h2 className="text-lg font-extrabold text-slate-900" style={{ fontFamily: "Manrope" }}>
+                Step 1: Cargo, Fairway Routes & Delivery Schedule
+              </h2>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Specify your company, commodity, origin/destination ports, and laycan. Vessel hull assignment is automatically predicted and confirmed by the Contractor.
+              </p>
+            </div>
+            <span className="px-2.5 py-1 rounded-full text-[11px] font-mono font-bold bg-blue-50 text-blue-900 border border-blue-200 shrink-0">
+              Contractor Fleet Allocation Model
+            </span>
           </div>
 
-          {/* Section 1: Preferred Vessel Size with Real Beam, LOA, Draft Specs */}
+          {/* Section 1: Company / Shipper Identity & Cargo Commodity */}
           <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-mono font-bold text-blue-900 uppercase">
-                1. PREFERRED VESSEL SIZE CLASS (BEAM, LOA & DRAFT SPECIFICATIONS)
-              </label>
-              <span className="text-[11px] font-mono text-slate-500">
-                Selected: <span className="font-bold text-blue-900">{preferredVesselCategory}</span> (Beam: {currentSpec.beam}m, LOA: {currentSpec.loa}m, Draft: {currentSpec.draft}m)
-              </span>
+            <div className="text-xs font-mono font-bold text-blue-900 uppercase flex items-center justify-between">
+              <span>1. SHIPPER IDENTITY & CARGO COMMODITY</span>
+              <span className="text-[11px] text-slate-500 font-normal">Step 1 of 4</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-              {Object.keys(VESSEL_SPECS).map((vcat) => {
-                const spec = VESSEL_SPECS[vcat];
-                const isSelected = preferredVesselCategory === vcat;
-
-                return (
-                  <button
-                    key={vcat}
-                    type="button"
-                    onClick={() => handleVesselCategoryChange(vcat)}
-                    className={`p-4 rounded-xl border-2 text-left transition-all relative ${
-                      isSelected 
-                        ? "border-blue-900 bg-blue-50/50 shadow-md ring-2 ring-blue-900/20" 
-                        : "border-slate-200 hover:border-slate-300 bg-white"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="flex items-center gap-1.5">
-                        <span className="font-extrabold text-sm text-slate-900 font-mono">{vcat}</span>
-                        {aiPredictionResult?.category === vcat && (
-                          <span className="text-[9px] font-mono font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-1.5 py-0.5 rounded-full">
-                            AI Best
-                          </span>
-                        )}
-                      </div>
-                      <TopDownVesselIcon category={vcat} size={20} />
-                    </div>
-
-                    <div className="text-[11px] font-mono text-slate-600 space-y-1">
-                      <div>• Capacity: <span className="font-bold text-slate-900">~{(spec.avgPayload / 1000).toFixed(0)}k MT</span></div>
-                      <div>• Max Beam: <span className="font-bold text-slate-900">{spec.beam}m</span></div>
-                      <div>• Max LOA: <span className="font-bold text-slate-900">{spec.loa}m</span></div>
-                      <div>• Max Draft: <span className="font-bold text-slate-900">{spec.draft}m</span></div>
-                    </div>
-
-                    {isSelected && (
-                      <span className="absolute bottom-2 right-2 w-2 h-2 rounded-full bg-blue-900" />
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Minimal AI Vessel Prediction Bar: Positioned cleanly between Section 1 and Section 2 */}
-          <div className="p-3.5 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/70 rounded-xl border border-blue-200/80 shadow-sm space-y-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-lg bg-blue-900 text-white grid place-items-center shrink-0 shadow-sm">
-                  <Sparkles size={15} className="text-amber-300" />
-                </div>
-                <div className="min-w-0">
-                  <div className="text-xs font-bold text-slate-900 flex items-center gap-2 flex-wrap">
-                    <span>AI Vessel Recommendation Engine</span>
-                    {aiPredictionResult ? (
-                      <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <CheckCircle2 size={10} className="text-emerald-600" />
-                        AI Optimal: {aiPredictionResult.category}
-                      </span>
-                    ) : (
-                      <span className="text-[10px] font-mono text-slate-500 bg-slate-200/70 px-2 py-0.5 rounded-full">
-                        Ready to Optimize
-                      </span>
-                    )}
-                    {getVesselCompatibilityCheck().warning && (
-                      <span className="text-[10px] font-mono font-bold text-amber-700 bg-amber-100 border border-amber-300 px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <AlertTriangle size={10} className="text-amber-600" />
-                        Current Selection Conflict
-                      </span>
-                    )}
-                  </div>
-                  <div className="text-[11px] text-slate-600 mt-0.5 leading-snug">
-                    {aiPredictionResult ? (
-                      <span className="font-medium text-slate-800">{aiPredictionResult.rationale}</span>
-                    ) : (
-                      <span className="text-slate-500">
-                        Cross-analyzes cargo volume ({Number(cargoQuantity).toLocaleString()} MT), {destPort} port depth ({activeDest.maxDraft}m draft), and laycan SLA.
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={handleAiVesselPredict}
-                className="shrink-0 px-3.5 py-2 rounded-lg bg-blue-900 hover:bg-blue-800 active:scale-95 text-white font-mono text-xs font-bold flex items-center gap-2 shadow-sm transition-all self-start sm:self-auto cursor-pointer"
-                title="Click to automatically predict and select the best vessel class based on Sections 2 & 3"
-              >
-                <Sparkles size={13} className="text-amber-300 animate-pulse" />
-                <span>AI Predict Best Vessel</span>
-              </button>
-            </div>
-
-            {/* Quick 4-Parameter Visual Logic Pills */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-slate-200/60 text-[10.5px] font-mono">
-              <div className="flex items-center gap-1.5 text-slate-700 bg-white/80 p-1.5 rounded-lg border border-slate-200/60">
-                <span className="text-slate-400">Tons:</span>
-                <span className="font-bold text-blue-900 truncate">
-                  {Number(cargoQuantity).toLocaleString()} MT ({contractDuration === "1 voyage (Spot)" ? "Spot" : `${expectedVoyages}x trips`})
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div>
+                <label className="astra-label block mb-1.5">Company / Industrial Shipper</label>
+                <input
+                  type="text"
+                  value={companyName}
+                  onChange={(e) => setCompanyName(e.target.value)}
+                  placeholder="e.g. Jindal Steel & Power Ltd (JSPL)"
+                  className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-slate-50 font-bold text-sm text-slate-900 focus:ring-2 focus:ring-blue-900 outline-none"
+                />
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Registered shipper chartering entity
                 </span>
               </div>
-              <div className="flex items-center gap-1.5 text-slate-700 bg-white/80 p-1.5 rounded-lg border border-slate-200/60">
-                <span className="text-slate-400">Draft:</span>
-                <span className={`font-bold truncate ${currentSpec.draft > activeDest.maxDraft ? "text-red-600" : "text-emerald-700"}`}>
-                  {destPort} max {activeDest.maxDraft}m {currentSpec.draft > activeDest.maxDraft ? "❌ Too Deep" : "✓ Cleared"}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-slate-700 bg-white/80 p-1.5 rounded-lg border border-slate-200/60">
-                <span className="text-slate-400">SLA:</span>
-                <span className="font-bold text-slate-900 truncate">
-                  ~{Math.ceil((activeOrigin.distNm || 5000) / (currentSpec.speedKnots * 24)) + 1}d sailing from {originPort}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5 text-slate-700 bg-white/80 p-1.5 rounded-lg border border-slate-200/60">
-                <span className="text-slate-400">Freight:</span>
-                <span className="font-bold text-emerald-700 truncate">${currentSpec.ratePerTon.toFixed(2)}/t base</span>
-              </div>
-            </div>
 
-            {/* Warning banner if current manual selection has physical or operational conflict */}
-            {getVesselCompatibilityCheck().warning && (
-              <div className="p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center justify-between text-xs text-amber-800">
-                <div className="flex items-center gap-1.5">
-                  <AlertTriangle size={13} className="text-amber-600 shrink-0" />
-                  <span>{getVesselCompatibilityCheck().warning}</span>
-                </div>
-                {aiPredictionResult?.category && aiPredictionResult.category !== preferredVesselCategory && (
-                  <button
-                    type="button"
-                    onClick={() => handleVesselCategoryChange(aiPredictionResult.category)}
-                    className="ml-2 px-2 py-0.5 bg-amber-200 hover:bg-amber-300 text-amber-900 font-mono text-[10px] font-bold rounded cursor-pointer"
-                  >
-                    Switch to {aiPredictionResult.category}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Section 2: Commodity & Corridor Ports */}
-          <div className="space-y-3 pt-3 border-t border-slate-100">
-            <div className="text-xs font-mono font-bold text-blue-900 uppercase">
-              2. CARGO COMMODITY & EAST COAST PORTS
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="astra-label block mb-1.5">Cargo Commodity Type</label>
                 <select
                   value={cargoType}
                   onChange={(e) => setCargoType(e.target.value)}
-                  className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-slate-50 font-bold text-sm text-slate-900 focus:ring-2 focus:ring-blue-900 outline-none"
+                  className={`w-full h-11 px-3 rounded-lg border font-bold text-sm outline-none transition ${
+                    !cargoType ? "border-amber-400 bg-amber-50/50 text-slate-500" : "border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-blue-900"
+                  }`}
                 >
-                  <option value="Thermal Coal">Thermal Coal</option>
-                  <option value="Coking Coal">Coking Coal</option>
-                  <option value="Iron Ore Fines">Iron Ore Fines</option>
-                  <option value="Limestone Bulk">Limestone Bulk</option>
-                  <option value="Bauxite">Bauxite Ore</option>
+                  <option value="">-- Select Cargo Commodity --</option>
+                  <option value="Thermal Coal">Thermal Coal (Bulk Energy)</option>
+                  <option value="Coking Coal">Coking Coal (Metallurgical)</option>
+                  <option value="Iron Ore Fines">Iron Ore Fines (Steelmaking)</option>
+                  <option value="Limestone Bulk">Limestone Bulk (Flux Material)</option>
+                  <option value="Bauxite">Bauxite Ore (Aluminium Refinement)</option>
                 </select>
+                <span className="text-[10px] text-slate-500 mt-1 block">
+                  Dry bulk standard classification
+                </span>
               </div>
 
               <div>
                 <div className="flex items-center justify-between mb-1.5">
                   <label className="astra-label">Cargo Quantity (Metric Tons)</label>
                   <span className="text-[10px] font-mono font-bold text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.5 rounded">
-                    {contractDuration === "1 voyage (Spot)" ? `Spot: ${Number(cargoQuantity).toLocaleString()} MT` : `${expectedVoyages} Voyages (~${Math.round(Number(cargoQuantity) / Math.max(1, expectedVoyages)).toLocaleString()} MT/trip)`}
+                    {contractDuration === "1 voyage (Spot)" ? `${Number(cargoQuantity).toLocaleString()} MT` : `${expectedVoyages}x Voyages`}
                   </span>
                 </div>
                 <input
                   type="number"
                   value={cargoQuantity}
                   min="1000"
-                  max="250000"
+                  max="400000"
                   onChange={(e) => handleQuantityChange(e.target.value)}
-                  className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-slate-50 font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-blue-900 outline-none"
+                  className={`w-full h-11 px-3 rounded-lg border font-mono font-bold text-sm outline-none transition ${
+                    Number(cargoQuantity) <= 0
+                      ? "border-red-500 bg-red-50/70 text-red-900 focus:ring-2 focus:ring-red-400"
+                      : Number(cargoQuantity) < 1000
+                      ? "border-amber-400 bg-amber-50/70 text-amber-900 focus:ring-2 focus:ring-amber-400"
+                      : "border-slate-200 bg-slate-50 text-slate-900 focus:ring-2 focus:ring-blue-900"
+                  }`}
                   step="1000"
                 />
-                <span className="text-[10px] text-slate-500 mt-1 block">
-                  {contractDuration === "1 voyage (Spot)"
-                    ? `Single spot voyage · Evaluated against East Coast port depth and vessel payload limits`
-                    : `Volume allocated across ${expectedVoyages} voyages (~${Math.round(Number(cargoQuantity) / Math.max(1, expectedVoyages)).toLocaleString()} MT per voyage)`}
-                </span>
-              </div>
-
-              <div>
-                <label className="astra-label block mb-1.5">Origin Port (Loading)</label>
-                <select
-                  value={originPort}
-                  onChange={(e) => setOriginPort(e.target.value)}
-                  className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-slate-50 font-bold text-sm text-slate-900 focus:ring-2 focus:ring-blue-900 outline-none"
-                >
-                  {ORIGIN_OPTIONS.map(o => (
-                    <option key={o.port} value={o.port}>{o.port} ({o.country})</option>
+                {/* Real-time validation warning message */}
+                {Number(cargoQuantity) <= 0 ? (
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono text-red-700 bg-red-50 p-2 rounded-lg border border-red-200 mt-1.5">
+                    <AlertTriangle size={13} className="shrink-0 text-red-600" />
+                    <span>0 MT is invalid! Commercial dry-bulk shipping requires at least 1,000 MT.</span>
+                  </div>
+                ) : Number(cargoQuantity) < 1000 ? (
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono text-amber-800 bg-amber-50 p-2 rounded-lg border border-amber-200 mt-1.5">
+                    <AlertTriangle size={13} className="shrink-0 text-amber-600" />
+                    <span>Minimum parcel size is 1,000 MT for commercial chartering.</span>
+                  </div>
+                ) : null}
+                {/* Volume Quick Presets */}
+                <div className="flex items-center gap-1.5 mt-1.5 flex-wrap">
+                  <span className="text-[10px] text-slate-400 font-mono">Presets:</span>
+                  {[35000, 55000, 70000, 150000, 220000].map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => handleQuantityChange(preset)}
+                      className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold border transition ${
+                        cargoQuantity === preset 
+                          ? "bg-blue-900 text-white border-blue-900" 
+                          : "bg-white text-slate-600 border-slate-200 hover:border-slate-300"
+                      }`}
+                    >
+                      {preset === 150000 ? "150k MT (Capesize)" : preset === 220000 ? "220k MT (VLOC)" : `${preset / 1000}k MT`}
+                    </button>
                   ))}
-                </select>
-              </div>
-
-              <div>
-                <label className="astra-label block mb-1.5">Destination Port (East Coast India)</label>
-                <select
-                  value={destPort}
-                  onChange={(e) => setDestPort(e.target.value)}
-                  className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-slate-50 font-bold text-sm text-slate-900 focus:ring-2 focus:ring-blue-900 outline-none"
-                >
-                  {EAST_COAST_DESTINATIONS.map(d => (
-                    <option key={d.port} value={d.port}>{d.port} Port ({d.state}) · Draft: {d.maxDraft}m</option>
-                  ))}
-                </select>
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Section 3: Delivery Laycan & Contract Structure (Clearly Explained) */}
+          {/* Section 2: Origin Loading & Destination Discharge Fairways */}
+          <div className="space-y-3 pt-3 border-t border-slate-100">
+            <div className="text-xs font-mono font-bold text-blue-900 uppercase">
+              2. CORRIDOR & PORTS (ORIGIN & DESTINATION FAIRWAYS)
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="astra-label">Origin Port (Loading Jetty)</label>
+                  <span className="text-[10px] font-mono text-slate-500">Overseas Siding</span>
+                </div>
+                <select
+                  value={originPort}
+                  onChange={(e) => setOriginPort(e.target.value)}
+                  className={`w-full h-11 px-3 rounded-lg border font-bold text-sm outline-none transition ${
+                    !originPort ? "border-amber-400 bg-amber-50/50 text-slate-500" : "border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-blue-900"
+                  }`}
+                >
+                  <option value="">-- Select Origin Loading Port --</option>
+                  {ORIGIN_OPTIONS.map(o => (
+                    <option key={o.port} value={o.port}>{o.port} ({o.country}) · {o.distNm} NM to East Coast</option>
+                  ))}
+                </select>
+                <div className="text-[11px] font-mono text-slate-600 flex items-center gap-1.5 pt-1">
+                  <MapPin size={12} className="text-blue-900 shrink-0" />
+                  <span>Siding: <strong>{originPort ? activeOrigin.warehouse : "Select origin port"}</strong></span>
+                </div>
+              </div>
+
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="astra-label">Destination Port (Discharge Jetty)</label>
+                  <span className="text-[10px] font-mono font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                    {destPort ? `Max Permissible Draft: ${activeDest.maxDraft}m` : "East Coast Ports"}
+                  </span>
+                </div>
+                <select
+                  value={destPort}
+                  onChange={(e) => setDestPort(e.target.value)}
+                  className={`w-full h-11 px-3 rounded-lg border font-bold text-sm outline-none transition ${
+                    !destPort ? "border-amber-400 bg-amber-50/50 text-slate-500" : "border-slate-300 bg-white text-slate-900 focus:ring-2 focus:ring-blue-900"
+                  }`}
+                >
+                  <option value="">-- Select Destination Discharge Port --</option>
+                  {EAST_COAST_DESTINATIONS.map(d => (
+                    <option key={d.port} value={d.port}>{d.port} Port ({d.state}) · Draft Limit: {d.maxDraft}m · Max LOA: {d.maxLoa}m</option>
+                  ))}
+                </select>
+                <div className="text-[11px] font-mono text-slate-600 flex items-center gap-1.5 pt-1">
+                  <Factory size={12} className="text-amber-700 shrink-0" />
+                  <span>Receiving Facility: <strong>{destPort ? activeDest.plant : "Select destination port"}</strong></span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Delivery Laycan & Contract Structure */}
           <div className="space-y-3 pt-3 border-t border-slate-100">
             <div className="flex items-center justify-between">
               <div className="text-xs font-mono font-bold text-blue-900 uppercase">
-                3. DELIVERY SLA & CONTRACT STRUCTURE
+                3. DELIVERY LAYCAN & CONTRACT STRUCTURE
               </div>
               <span className="text-[10px] font-mono text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                {contractDuration === "1 voyage (Spot)" ? "Spot: Single 1-time delivery" : `COA / Period: Divided across ${expectedVoyages} sequential ${preferredVesselCategory} voyages`}
+                {contractDuration === "1 voyage (Spot)" ? "Spot: Single 1-time delivery" : `Divided across ${expectedVoyages} sequential ${preferredVesselCategory} voyages`}
               </span>
             </div>
 
@@ -1075,7 +1127,7 @@ export default function NewRequirement() {
                   className="w-full h-11 px-3 rounded-lg border border-slate-200 bg-slate-50 font-mono font-bold text-sm text-slate-900 focus:ring-2 focus:ring-blue-900 outline-none"
                 />
                 <span className="text-[10px] text-slate-500 mt-1 block">
-                  Select arrival laycan (Earliest selectable: Today {todayStr})
+                  Select laycan (Earliest selectable: Today {todayStr})
                 </span>
               </div>
 
@@ -1107,7 +1159,170 @@ export default function NewRequirement() {
             </div>
           </div>
 
-          {/* Section 4: Auto-Inferred Hinterland Corridor (Zero Manual Typing) */}
+          {/* Section 4: Logistics Operator Model Strategy (Single vs Multiple) */}
+          <div className="space-y-3 pt-3 border-t border-slate-100">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-mono font-bold text-blue-900 uppercase flex items-center gap-2">
+                <Building2 size={14} />
+                <span>4. LOGISTICS OPERATOR MODEL (ORIGIN & DESTINATION STRATEGY)</span>
+              </div>
+              <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded border ${
+                logisticsModel === "single" 
+                  ? "bg-emerald-50 text-emerald-800 border-emerald-300" 
+                  : "bg-indigo-50 text-indigo-800 border-indigo-300"
+              }`}>
+                {logisticsModel === "single" ? "🛡️ Single Unified Operator (Turnkey)" : "🔀 Multiple Specialized Operators (Leg Split)"}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Option A: Single Logistics Operator */}
+              <div
+                onClick={() => setLogisticsModel("single")}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                  logisticsModel === "single"
+                    ? "border-blue-900 bg-blue-50/40 shadow-md ring-1 ring-blue-900/30"
+                    : "border-slate-200 bg-white hover:border-slate-300"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-8 h-8 rounded-lg grid place-items-center ${logisticsModel === "single" ? "bg-blue-900 text-white" : "bg-slate-100 text-slate-700"}`}>
+                      <ShieldCheck size={17} />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-900">Single Logistics Operator</h4>
+                      <span className="text-[10px] font-mono text-emerald-700 font-bold block">
+                        Same unified 3PL/4PL at Origin & Destination
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="radio"
+                    name="logisticsModel"
+                    checked={logisticsModel === "single"}
+                    onChange={() => setLogisticsModel("single")}
+                    className="w-4 h-4 text-blue-900 accent-blue-900 cursor-pointer"
+                  />
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
+                  One integrated turnkey contractor handles overseas siding drayage, ocean vessel charter, port handling, and destination plant delivery under a <strong>single unified SLA</strong>.
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-mono pt-2 border-t border-slate-200/60">
+                  <div className="bg-white/80 p-1.5 rounded border border-slate-200/80">
+                    <span className="text-slate-400 block font-bold">ACCOUNTABILITY:</span>
+                    <span className="font-bold text-slate-800">Single Point of Contact</span>
+                  </div>
+                  <div className="bg-white/80 p-1.5 rounded border border-slate-200/80">
+                    <span className="text-slate-400 block font-bold">HANDOFF RISK:</span>
+                    <span className="font-bold text-emerald-700">Zero Inter-Leg Demurrage</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Option B: Multiple Logistics Operators */}
+              <div
+                onClick={() => setLogisticsModel("multiple")}
+                className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                  logisticsModel === "multiple"
+                    ? "border-blue-900 bg-blue-50/40 shadow-md ring-1 ring-blue-900/30"
+                    : "border-slate-200 bg-white hover:border-slate-300"
+                }`}
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <div className={`w-8 h-8 rounded-lg grid place-items-center ${logisticsModel === "multiple" ? "bg-blue-900 text-white" : "bg-slate-100 text-slate-700"}`}>
+                      <Layers size={17} />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-900">Multiple Logistics Operators</h4>
+                      <span className="text-[10px] font-mono text-blue-700 font-bold block">
+                        Different specialized operators per leg
+                      </span>
+                    </div>
+                  </div>
+                  <input
+                    type="radio"
+                    name="logisticsModel"
+                    checked={logisticsModel === "multiple"}
+                    onChange={() => setLogisticsModel("multiple")}
+                    className="w-4 h-4 text-blue-900 accent-blue-900 cursor-pointer"
+                  />
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed mb-2.5">
+                  Contract separate specialized operators for <strong>Origin Overseas Haulage</strong>, <strong>Deepsea Ocean Line</strong>, and <strong>Destination Hinterland Fleet</strong> for maximum leg arbitrage.
+                </p>
+                <div className="grid grid-cols-2 gap-2 text-[10px] font-mono pt-2 border-t border-slate-200/60">
+                  <div className="bg-white/80 p-1.5 rounded border border-slate-200/80">
+                    <span className="text-slate-400 block font-bold">COST ARBITRAGE:</span>
+                    <span className="font-bold text-emerald-700">Lowest Leg-by-Leg Quotes</span>
+                  </div>
+                  <div className="bg-white/80 p-1.5 rounded border border-slate-200/80">
+                    <span className="text-slate-400 block font-bold">SPECIALIZATION:</span>
+                    <span className="font-bold text-blue-900">Niche Regional Haulers</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 5: ASTRA AI Vessel & Route Feasibility (Contractor Allocation) */}
+          <div className="p-4 bg-gradient-to-r from-blue-50/90 via-slate-50 to-indigo-50/70 rounded-xl border border-blue-200 shadow-sm space-y-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-lg bg-blue-900 text-white grid place-items-center shrink-0 shadow-sm">
+                  <Sparkles size={16} className="text-amber-300" />
+                </div>
+                <div>
+                  <div className="text-xs font-extrabold text-slate-900 flex items-center gap-2 flex-wrap">
+                    <span>AI Fleet Optimization & Contractor Feasibility Check</span>
+                    <span className="text-[10px] font-mono font-bold text-emerald-800 bg-emerald-100 border border-emerald-300 px-2 py-0.5 rounded-full flex items-center gap-1">
+                      <CheckCircle2 size={11} className="text-emerald-600" />
+                      Auto-Evaluated: {preferredVesselCategory} Class
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-600 mt-0.5 leading-snug">
+                    Company shippers do not need to choose a vessel. When you dispatch, ASTRA AI checks draft clearance, ballast positioning, and evaluates fuel efficiency to predict the best vessel directly on the Contractor Desk.
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Feasibility metrics */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2 pt-2 border-t border-slate-200/60 text-[11px] font-mono">
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-slate-400 text-[10px] uppercase font-bold block">PREDICTED VESSEL CLASS</span>
+                <span className="font-extrabold text-blue-900">{preferredVesselCategory}</span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">~{(currentSpec.avgPayload / 1000).toFixed(0)}k MT capacity</span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-slate-400 text-[10px] uppercase font-bold block">PORT DRAFT COMPLIANCE</span>
+                <span className={`font-extrabold ${currentSpec.draft <= activeDest.maxDraft ? "text-emerald-700" : "text-amber-700"}`}>
+                  {currentSpec.draft <= activeDest.maxDraft ? `✓ Cleared (+${(activeDest.maxDraft - currentSpec.draft).toFixed(1)}m)` : `⚠️ Exceeds by ${(currentSpec.draft - activeDest.maxDraft).toFixed(1)}m`}
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">{destPort} max {activeDest.maxDraft}m</span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-slate-400 text-[10px] uppercase font-bold block">ESTIMATED SAILING SLA</span>
+                <span className="font-extrabold text-slate-800">
+                  ~{Math.ceil((activeOrigin.distNm || 5000) / (currentSpec.speedKnots * 24)) + 1} Days
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">{activeOrigin.distNm || 5000} NM from {originPort}</span>
+              </div>
+
+              <div className="bg-white p-2.5 rounded-lg border border-slate-200">
+                <span className="text-slate-400 text-[10px] uppercase font-bold block">ESTIMATED FREIGHT RATE</span>
+                <span className="font-extrabold text-emerald-700 font-mono">
+                  ${currentSpec.ratePerTon.toFixed(2)} / MT
+                </span>
+                <span className="text-[10px] text-slate-500 block mt-0.5">Base ocean freight index</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 5: Auto-Inferred Hinterland Corridor */}
           <div className="p-4 rounded-xl bg-blue-50/60 border border-blue-200 space-y-3">
             <div className="text-xs font-mono font-bold text-blue-900 uppercase flex items-center gap-2">
               <Info size={14} />
@@ -1144,22 +1359,40 @@ export default function NewRequirement() {
           <div className="flex justify-end pt-2">
             <button
               onClick={() => {
+                if (!companyName.trim()) {
+                  toast.error("Please enter your Company / Industrial Shipper name.");
+                  return;
+                }
+                if (!cargoType) {
+                  toast.error("Please select a Cargo Commodity type from the dropdown.");
+                  return;
+                }
+                if (!cargoQuantity || Number(cargoQuantity) <= 0) {
+                  toast.error("Invalid Cargo Quantity: Please enter at least 1,000 Metric Tons.");
+                  return;
+                }
+                if (Number(cargoQuantity) < 1000) {
+                  toast.error("Minimum parcel volume is 1,000 MT for commercial dry-bulk chartering.");
+                  return;
+                }
+                if (!originPort) {
+                  toast.error("Please select an Origin Loading Port from the dropdown.");
+                  return;
+                }
+                if (!destPort) {
+                  toast.error("Please select a Destination Discharge Port from the dropdown.");
+                  return;
+                }
                 if (requiredArrivalDate < todayStr) {
                   toast.error("Target arrival laycan date cannot be in the past.");
                   setRequiredArrivalDate(todayStr);
-                  return;
-                }
-                const spec = VESSEL_SPECS[preferredVesselCategory];
-                if (contractDuration === "1 voyage (Spot)" && cargoQuantity > spec.dwt) {
-                  toast.error(`For Spot contract, cargo quantity (${cargoQuantity.toLocaleString()} MT) cannot exceed ${preferredVesselCategory} maximum capacity of ${spec.dwt.toLocaleString()} MT.`);
-                  setCargoQuantity(spec.dwt);
                   return;
                 }
                 setStep(2);
               }}
               className="btn-primary px-8 h-12 text-sm font-bold gap-2"
             >
-              <span>Proceed to AI Execution Recommendations (Plan 1/2/3)</span>
+              <span>Proceed to Multimodal Feasibility & Cost Analysis</span>
               <ArrowRight size={16} />
             </button>
           </div>
@@ -1313,19 +1546,29 @@ export default function NewRequirement() {
                     {/* Col 1: Vessel & Contractor */}
                     <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200 space-y-2.5">
                       <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 rounded-lg bg-slate-900 text-white grid place-items-center shrink-0">
-                          <TopDownVesselIcon category={plan.vessel.category} size={22} />
+                        <div className="rounded-xl bg-slate-900 shrink-0 overflow-hidden flex items-end justify-center"
+                          style={{
+                            width: plan.vessel.category === "VLOC" ? 44 : plan.vessel.category === "Capesize" ? 40 : plan.vessel.category === "Panamax" ? 36 : plan.vessel.category === "Supramax" ? 32 : 28,
+                            height: plan.vessel.category === "VLOC" ? 72 : plan.vessel.category === "Capesize" ? 64 : plan.vessel.category === "Panamax" ? 56 : plan.vessel.category === "Supramax" ? 48 : 42,
+                          }}
+                        >
+                          <TopDownVesselIcon
+                            category={plan.vessel.category}
+                            size={plan.vessel.category === "VLOC" ? 20 : plan.vessel.category === "Capesize" ? 17 : plan.vessel.category === "Panamax" ? 15 : plan.vessel.category === "Supramax" ? 13 : 11}
+                          />
                         </div>
                         <div>
-                          <div className="text-[10px] uppercase font-mono font-bold text-slate-400">VESSEL & OPERATOR</div>
-                          <div className="font-extrabold text-slate-900 text-sm">{plan.vessel.name}</div>
-                          <div className="text-[11px] text-slate-500 font-mono">{plan.contractor.name} ({plan.contractor.reliability})</div>
+                          <div className="text-[10px] uppercase font-mono font-bold text-blue-900">PREDICTED VESSEL CLASS</div>
+                          <div className="font-extrabold text-slate-900 text-sm">{plan.vessel.category} (~{(plan.vessel.dwt / 1000).toFixed(0)}k DWT)</div>
+                          <div className="text-[11px] text-emerald-700 font-mono font-bold flex items-center gap-1">
+                            <Sparkles size={11} /> Hull Assigned by Contractor Desk
+                          </div>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-2 text-[11px] font-mono pt-1">
                         <div>
-                          <span className="text-slate-400 block text-[10px]">SPECS:</span>
+                          <span className="text-slate-400 block text-[10px]">OPTIMAL CLASS:</span>
                           <span className="font-bold text-slate-800">{plan.vessel.category} ({plan.vessel.dwt.toLocaleString()} DWT)</span>
                         </div>
                         <div>
@@ -1343,68 +1586,227 @@ export default function NewRequirement() {
                           <span className="font-bold text-slate-800">{plan.contractor.roadTransporter}</span>
                         </div>
                       </div>
+
+                      {/* Port Rationale: Why Origin & Destination */}
+                      <div className="pt-2 border-t border-slate-200/70 space-y-2">
+                        <div className="text-[10px] font-mono font-bold text-slate-400 uppercase tracking-wide">Port Selection Rationale</div>
+                        <div className="flex flex-col gap-1.5">
+                          <div className="flex items-start gap-2 bg-amber-50/60 border border-amber-200/70 rounded-lg p-2">
+                            <div className="w-5 h-5 rounded-full bg-amber-100 border border-amber-300 text-amber-700 grid place-items-center shrink-0 mt-0.5">
+                              <Truck size={10} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-extrabold text-amber-800 uppercase">Origin · {plan.originPort}</div>
+                              <div className="text-[10px] text-slate-600 leading-snug mt-0.5">
+                                {activeOrigin.country === "Australia" && "Deep-draft coal terminal with 24/7 conveyor loading at 4,000+ MT/hr. Minimal anchorage queue and shortest NM corridor to Indian East Coast."}
+                                {activeOrigin.country === "Indonesia" && "South Kalimantan open-cast siding offers shortest sailing distance to East India at " + (activeOrigin.distNm || 2280) + " NM, cutting transit time by ~3 days vs Australian origin."}
+                                {activeOrigin.country === "South Africa" && "Richards Bay Coal Terminal ranks #1 globally for throughput reliability. Ideal for Capesize/VLOC fixtures with 18m draft clearance."}
+                                {activeOrigin.country === "Singapore" && "Jurong Island transshipment hub enables feeder consolidation and flexible laycan scheduling for just-in-time Indian East Coast delivery."}
+                                {!['Australia','Indonesia','South Africa','Singapore'].includes(activeOrigin.country) && `${plan.originPort} selected for optimal NM-to-cost ratio and draft clearance on the ${plan.vessel.category} class fixture.`}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex items-start gap-2 bg-emerald-50/60 border border-emerald-200/70 rounded-lg p-2">
+                            <div className="w-5 h-5 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-700 grid place-items-center shrink-0 mt-0.5">
+                              <Factory size={10} />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-[10px] font-extrabold text-emerald-800 uppercase">Destination · {plan.destinationPort}</div>
+                              <div className="text-[10px] text-slate-600 leading-snug mt-0.5">
+                                Max draft {activeDest.maxDraft}m accommodates {plan.vessel.category} class at {plan.vessel.draftM}m.
+                                {' '}{activeDest.congestion === 'Low' ? 'Low berth congestion ensures rapid turnaround and near-zero demurrage risk.' : activeDest.congestion === 'Medium' ? 'Moderate congestion managed via JIT vessel arrival scheduling to eliminate queue wait.' : 'High congestion port — ASTRA schedules JIT arrival to compress anchorage wait and shield demurrage.'}
+                                {' '}Hinterland corridor via {plan.destinationWarehouse.mode} to {plan.destinationWarehouse.name} is the lowest-cost inland leg.
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Col 2: End-to-End Multimodal Route & Warehouse */}
-                    <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200 space-y-2.5">
-                      <div className="text-[10px] uppercase font-mono font-bold text-slate-400">
-                        END-TO-END SUPPLY CHAIN CORRIDOR
+                    {/* Col 2: Visually Appealing End-to-End Multimodal Supply Chain Pipeline */}
+                    <div className="p-3.5 bg-gradient-to-b from-slate-50 via-white to-slate-50 rounded-xl border border-slate-200/90 shadow-sm flex flex-col justify-between space-y-3">
+                      {/* Corridor Header */}
+                      <div className="flex items-center justify-between border-b border-slate-200/70 pb-2">
+                        <div className="text-[10px] uppercase font-mono font-bold text-slate-500 flex items-center gap-1.5">
+                          <Layers size={13} className="text-blue-900" />
+                          <span>END-TO-END MULTIMODAL CHAIN</span>
+                        </div>
+                        <span className={`text-[10px] font-mono font-bold px-2 py-0.5 rounded-full border ${
+                          plan.operatorModel === "SINGLE_OPERATOR" 
+                            ? "bg-emerald-50 text-emerald-800 border-emerald-300" 
+                            : "bg-indigo-50 text-indigo-800 border-indigo-300"
+                        }`}>
+                          {plan.operatorModel === "SINGLE_OPERATOR" ? "🛡️ Single Turnkey Operator" : "🔀 Multi-Operator Split"}
+                        </span>
                       </div>
-                      
-                      <div className="space-y-1.5 text-xs font-mono">
-                        <div className="flex items-start gap-2">
-                          <span className="text-amber-600 font-bold">1. Origin:</span>
-                          <span className="text-slate-800 font-semibold">{plan.originWarehouse} ➔ {plan.originPort} Port</span>
+
+                      {/* Spacious 3-Node Connected Milestone Flow */}
+                      <div className="space-y-2 relative font-mono">
+                        {/* Continuous Vertical Accent Line connecting nodes */}
+                        <div className="absolute left-[14px] top-3.5 bottom-3.5 w-0.5 bg-gradient-to-b from-amber-400 via-blue-500 to-emerald-500 opacity-30 pointer-events-none" />
+
+                        {/* Stage 1: Origin First-Mile Land Leg */}
+                        <div className="relative flex items-start gap-2.5 p-2 rounded-lg bg-white border border-slate-200/80 shadow-xs hover:border-amber-300 transition">
+                          <div className="w-7 h-7 rounded-full bg-amber-50 border border-amber-300 text-amber-700 grid place-items-center shrink-0 z-10 font-bold text-[11px]">
+                            <Truck size={13} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-extrabold text-amber-800 uppercase tracking-tight">1. Origin First-Mile</span>
+                              <span className="text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded font-semibold">{plan.firstMileTrucks} Tippers</span>
+                            </div>
+                            <div className="text-[11px] font-bold text-slate-900 truncate mt-0.5" title={plan.originWarehouse}>
+                              {plan.originWarehouse}
+                            </div>
+                            <div className="text-[10px] text-slate-500 flex items-center justify-between mt-0.5">
+                              <span>➔ {plan.originPort} Port</span>
+                              <span className="text-amber-900 font-bold bg-amber-50 px-1 rounded truncate max-w-[130px]" title={plan.originOperator}>
+                                {plan.originOperator}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-start gap-2">
-                          <span className="text-blue-600 font-bold">2. Ocean:</span>
-                          <span className="text-slate-800 font-semibold">{plan.originPort} ➔ {plan.destinationPort} Port ({plan.estimatedOceanTransitDays} days)</span>
+
+                        {/* Stage 2: Deepsea Ocean Maritime Passage */}
+                        <div className="relative flex items-start gap-2.5 p-2 rounded-lg bg-white border border-slate-200/80 shadow-xs hover:border-blue-300 transition">
+                          <div className="w-7 h-7 rounded-full bg-blue-50 border border-blue-300 text-blue-900 grid place-items-center shrink-0 z-10 font-bold text-[11px]">
+                            <Anchor size={13} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-extrabold text-blue-900 uppercase tracking-tight">2. Ocean Fairway</span>
+                              <span className="text-blue-900 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded font-bold">⏱️ {plan.estimatedOceanTransitDays}d Sailing</span>
+                            </div>
+                            <div className="text-[11px] font-bold text-slate-900 truncate mt-0.5">
+                              {plan.originPort} ➔ {plan.destinationPort} Deepwater
+                            </div>
+                            <div className="text-[10px] text-slate-500 flex items-center justify-between mt-0.5">
+                              <span>{plan.vessel.name}</span>
+                              <span className="text-blue-900 font-bold bg-blue-50 px-1 rounded truncate max-w-[130px]" title={plan.oceanCarrier}>
+                                {plan.oceanCarrier}
+                              </span>
+                            </div>
+                          </div>
                         </div>
-                        <div className="flex items-start gap-2">
-                          <span className="text-emerald-700 font-bold">3. Dest WH:</span>
-                          <span className="text-slate-900 font-extrabold">[{plan.destinationWarehouse.code}] {plan.destinationWarehouse.name} ({plan.destinationWarehouse.distanceKm} km · {plan.destinationWarehouse.transitHours}h)</span>
+
+                        {/* Stage 3: Destination Last-Mile Hinterland Leg */}
+                        <div className="relative flex items-start gap-2.5 p-2 rounded-lg bg-white border border-slate-200/80 shadow-xs hover:border-emerald-300 transition">
+                          <div className="w-7 h-7 rounded-full bg-emerald-50 border border-emerald-300 text-emerald-700 grid place-items-center shrink-0 z-10 font-bold text-[11px]">
+                            <Factory size={13} />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between text-[10px]">
+                              <span className="font-extrabold text-emerald-800 uppercase tracking-tight">3. Destination Plant</span>
+                              <span className="text-emerald-800 bg-emerald-50 border border-emerald-200 px-1.5 py-0.2 rounded font-bold">{plan.destinationWarehouse.distanceKm}km · {plan.destinationWarehouse.transitHours}h</span>
+                            </div>
+                            <div className="text-[11px] font-bold text-slate-900 truncate mt-0.5" title={plan.destinationWarehouse.name}>
+                              [{plan.destinationWarehouse.code}] {plan.destinationWarehouse.name}
+                            </div>
+                            <div className="text-[10px] text-slate-500 flex items-center justify-between mt-0.5">
+                              <span>{plan.lastMileTrucks} Dedicated Trucks</span>
+                              <span className="text-emerald-900 font-bold bg-emerald-50 px-1 rounded truncate max-w-[130px]" title={plan.lastMileOperator}>
+                                {plan.lastMileOperator}
+                              </span>
+                            </div>
+                          </div>
                         </div>
                       </div>
 
-                      <div className="p-2 bg-white rounded border border-slate-200 text-[11px] font-mono text-slate-600 flex justify-between">
-                        <span>Dispatched Fleet:</span>
-                        <span className="font-bold text-blue-900">{plan.firstMileTrucks} First-Mile + {plan.lastMileTrucks} Last-Mile Trucks</span>
+                      {/* Bottom Micro-Badge: Handoff Risk */}
+                      <div className="pt-2 border-t border-slate-200/70 flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-500">
+                          <CheckCircle2 size={12} className={plan.operatorModel === "SINGLE_OPERATOR" ? "text-emerald-600" : "text-blue-600"} />
+                          <span className="font-semibold">
+                            {plan.operatorModel === "SINGLE_OPERATOR" ? plan.contractor.name : "3 Coordinated Partners"}
+                          </span>
+                        </div>
+                        <span className="text-[9px] font-bold px-2 py-1 rounded-full bg-slate-100 text-slate-600 shrink-0 border border-slate-200">
+                          {plan.handoffRisk}
+                        </span>
                       </div>
                     </div>
 
                     {/* Col 3: Landed Cost & Risk Feasibility */}
-                    <div className="p-3.5 bg-slate-50/80 rounded-xl border border-slate-200 space-y-2.5">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="text-[10px] uppercase font-mono font-bold text-slate-400">TOTAL LANDED COST</div>
-                          <div className="text-xl font-extrabold text-blue-900 font-mono">
-                            ${(plan.totalLandedCostUsd).toLocaleString()}
+                    <div className="p-4 bg-gradient-to-b from-slate-900 to-slate-800 rounded-xl border border-slate-700 flex flex-col justify-between gap-4">
+                      <div>
+                        <div className="flex items-start justify-between mb-4">
+                          <div>
+                            <div className="text-[10px] uppercase font-mono font-bold text-slate-400 tracking-widest mb-1">Total Landed Cost</div>
+                            <div className="text-2xl font-extrabold text-white font-mono leading-none">
+                              ${plan.totalLandedCostUsd.toLocaleString()}
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono mt-1.5">
+                              ${plan.landedCostPerTonUsd} / MT landed
+                            </div>
                           </div>
-                          <div className="text-[11px] text-slate-500 font-mono">
-                            ${plan.landedCostPerTonUsd} / Metric Ton Landed
+                          <div className="text-right bg-emerald-500/20 border border-emerald-500/40 rounded-xl px-3 py-2.5">
+                            <div className="text-[9px] uppercase font-mono font-bold text-emerald-400 tracking-widest">AI Saves</div>
+                            <div className="text-xl font-extrabold text-emerald-400 font-mono leading-tight mt-0.5">
+                              +${plan.savingsUsd.toLocaleString()}
+                            </div>
                           </div>
                         </div>
 
-                        <div className="text-right">
-                          <span className="text-[10px] uppercase font-mono text-slate-400 block font-bold">AI SAVINGS</span>
-                          <span className="text-sm font-extrabold text-emerald-700 font-mono">
-                            +${plan.savingsUsd.toLocaleString()}
-                          </span>
+                        <div className="grid grid-cols-3 gap-1 mb-2 text-[9px] font-mono font-bold uppercase tracking-widest">
+                          <div className="text-slate-500">Cost Leg</div>
+                          <div className="text-right text-red-400">Market</div>
+                          <div className="text-right text-emerald-400">ASTRA</div>
+                        </div>
+                        <div className="border-t border-slate-700 mb-3" />
+
+                        <div className="space-y-3">
+                          {[
+                            { label: "Ocean Freight", icon: "🌊", actual: plan.oceanFreightTotalUsd + Math.round(cargoQuantity * 0.70), astra: plan.oceanFreightTotalUsd },
+                            { label: "First-Mile Road", icon: "🚛", actual: Math.round(plan.firstMileCostUsd * 1.16), astra: plan.firstMileCostUsd },
+                            { label: "Port Handling", icon: "⚓", actual: Math.round(plan.portHandlingCostUsd * 1.15), astra: plan.portHandlingCostUsd },
+                            { label: "Last-Mile Road", icon: "🏭", actual: Math.round(plan.roadFreightCostUsd * 1.16), astra: plan.roadFreightCostUsd },
+                            { label: "Demurrage Risk", icon: "⏱️", actual: Math.round(plan.demurragePerHourUsd * plan.portWaitingHours * 0.8), astra: plan.demurrageRisk === "LOW" ? 0 : Math.round(plan.demurragePerHourUsd * 2) }
+                          ].map(({ label, icon, actual, astra }) => {
+                            const pctSaved = actual > 0 ? Math.round(((actual - astra) / actual) * 100) : 0;
+                            const barWidth = actual > 0 ? Math.min(100, Math.round((astra / actual) * 100)) : 0;
+                            return (
+                              <div key={label}>
+                                <div className="grid grid-cols-3 gap-1 items-center mb-1">
+                                  <div className="flex items-center gap-1.5 text-[10px] font-mono text-slate-300 font-semibold">
+                                    <span>{icon}</span>
+                                    <span className="truncate">{label}</span>
+                                  </div>
+                                  <div className="text-right text-[11px] font-mono font-bold text-red-400">
+                                    ${(actual / 1000).toFixed(1)}k
+                                  </div>
+                                  <div className="text-right text-[11px] font-mono font-bold text-emerald-400">
+                                    ${(astra / 1000).toFixed(1)}k
+                                    {pctSaved > 0 && <span className="ml-1 text-[9px] text-emerald-500">-{pctSaved}%</span>}
+                                    {astra === 0 && <span className="ml-1 text-[9px] text-emerald-500">NIL</span>}
+                                  </div>
+                                </div>
+                                <div className="h-1 bg-red-900/50 rounded-full overflow-hidden">
+                                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${barWidth}%` }} />
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-3 gap-1 pt-1 text-center font-mono text-[10px]">
-                        <div className="p-1.5 rounded bg-white border border-slate-200">
-                          <span className="text-slate-400 block">PORT WAIT</span>
-                          <span className="font-bold text-slate-800">{plan.portWaitingHours}h</span>
+                      <div className="border-t border-slate-600 pt-3 space-y-2.5">
+                        <div className="grid grid-cols-3 gap-1 items-center">
+                          <div className="text-[11px] font-extrabold font-mono text-white uppercase tracking-wide">Total</div>
+                          <div className="text-right text-[13px] font-extrabold font-mono text-red-400">
+                            ${((plan.totalLandedCostUsd + plan.savingsUsd) / 1000).toFixed(1)}k
+                          </div>
+                          <div className="text-right text-[13px] font-extrabold font-mono text-emerald-400">
+                            ${(plan.totalLandedCostUsd / 1000).toFixed(1)}k
+                          </div>
                         </div>
-                        <div className="p-1.5 rounded bg-white border border-slate-200">
-                          <span className="text-slate-400 block">DEMURRAGE</span>
-                          <span className={`font-bold ${plan.demurrageRisk === "LOW" ? "text-emerald-700" : "text-amber-700"}`}>{plan.demurrageRisk}</span>
-                        </div>
-                        <div className="p-1.5 rounded bg-white border border-slate-200">
-                          <span className="text-slate-400 block">LOGISTICS</span>
-                          <span className={`font-bold ${plan.logisticsRisk === "LOW" ? "text-emerald-700" : "text-amber-700"}`}>{plan.logisticsRisk}</span>
+                        <div className="flex items-center justify-between text-[10px] font-mono">
+                          <div className="flex gap-3 text-slate-400">
+                            <span>Wait: <strong className="text-slate-200">{plan.portWaitingHours}h</strong></span>
+                            <span>Demurrage: <strong className={plan.demurrageRisk === "LOW" ? "text-emerald-400" : "text-amber-400"}>{plan.demurrageRisk}</strong></span>
+                          </div>
+                          <div className="bg-emerald-500/20 border border-emerald-500/50 text-emerald-400 font-extrabold px-2.5 py-1 rounded-full text-[10px]">
+                            Save ${plan.savingsUsd.toLocaleString()}
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -1470,59 +1872,7 @@ export default function NewRequirement() {
             </div>
           </div>
 
-          {/* 3 Core AI Optimization Pillar Cards */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* Pillar 1: Spot vs Future Freight Curve */}
-            <div className="astra-card p-5 space-y-3 border-t-4 border-t-blue-900">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-blue-900 uppercase">PILLAR 1: FREIGHT RATE PREDICTION</span>
-                <TrendingUp size={16} className="text-blue-900" />
-              </div>
-              <div className="font-mono">
-                <div className="text-2xl font-extrabold text-slate-900">${selectedContractor.oceanFreightRatePerTon.toFixed(2)} / Ton</div>
-                <div className="text-xs text-emerald-700 font-bold mt-0.5">Spot Price Timing Advantage: +$35,000 saved</div>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-lg text-xs font-mono space-y-1.5 text-slate-700">
-                <div>• Current Spot Rate: <span className="font-bold text-slate-900">${selectedContractor.oceanFreightRatePerTon.toFixed(2)}/t</span></div>
-                <div>• Forward 14-Day Curve: <span className="font-bold text-red-600">${(selectedContractor.oceanFreightRatePerTon + 0.50).toFixed(2)}/t (Upward Spike)</span></div>
-                <div>• Recommendation: <span className="font-bold text-emerald-700">Lock Spot Rate Today</span></div>
-              </div>
-            </div>
 
-            {/* Pillar 2: Port Waiting & Demurrage Shield */}
-            <div className="astra-card p-5 space-y-3 border-t-4 border-t-amber-500">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-amber-700 uppercase">PILLAR 2: PORT ANCHORAGE & DEMURRAGE</span>
-                <Anchor size={16} className="text-amber-500" />
-              </div>
-              <div className="font-mono">
-                <div className="text-2xl font-extrabold text-slate-900">{activeDest.waitHours} Hours Queue</div>
-                <div className="text-xs text-slate-500 mt-0.5">Historical anchorage queue at {destPort}</div>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-lg text-xs font-mono space-y-1.5 text-slate-700">
-                <div>• Terminal Assigned: <span className="font-bold text-slate-900">Mechanized Berth #2</span></div>
-                <div>• Demurrage Rate: <span className="font-bold text-slate-900">${selectedContractor.demurragePerHourUsd} / hour</span></div>
-                <div>• Delay Shield: <span className="font-bold text-emerald-700">JIT Truck & Crane Pre-booking</span></div>
-              </div>
-            </div>
-
-            {/* Pillar 3: Total Landed Cost Optimization */}
-            <div className="astra-card p-5 space-y-3 border-t-4 border-t-emerald-600">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold text-emerald-700 uppercase">PILLAR 3: TOTAL LANDED COST</span>
-                <ShieldCheck size={16} className="text-emerald-600" />
-              </div>
-              <div className="font-mono">
-                <div className="text-2xl font-extrabold text-emerald-700">${(selectedContractor.totalLandedCostUsd).toLocaleString()}</div>
-                <div className="text-xs text-emerald-800 font-bold mt-0.5">Net Multimodal Savings: +${selectedContractor.savingsUsd.toLocaleString()}</div>
-              </div>
-              <div className="p-3 bg-slate-50 rounded-lg text-xs font-mono space-y-1.5 text-slate-700">
-                <div>• Ocean Freight ({preferredVesselCategory}): <span className="font-bold">${(cargoQuantity * selectedContractor.oceanFreightRatePerTon).toLocaleString()}</span></div>
-                <div>• Road Fleet ({selectedContractor.firstMileTrucks + selectedContractor.lastMileTrucks} Trucks): <span className="font-bold">${selectedContractor.roadFreightCostUsd.toLocaleString()}</span></div>
-                <div>• Port Handling: <span className="font-bold">${selectedContractor.portHandlingCostUsd.toLocaleString()}</span></div>
-              </div>
-            </div>
-          </div>
 
           {/* ========================================================================= */}
           {/* VISUAL GRAPHS & INTERACTIVE CHARTS CONTAINER */}
@@ -1537,10 +1887,10 @@ export default function NewRequirement() {
                 </h3>
               </div>
 
-              <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-mono font-bold">
+              <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-mono font-bold overflow-x-auto no-scrollbar max-w-full">
                 <button
                   onClick={() => setAiChartTab("freight_curve")}
-                  className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 shrink-0 ${
                     aiChartTab === "freight_curve" ? "bg-blue-900 text-white shadow" : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
@@ -1550,7 +1900,7 @@ export default function NewRequirement() {
 
                 <button
                   onClick={() => setAiChartTab("cost_breakdown")}
-                  className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 shrink-0 ${
                     aiChartTab === "cost_breakdown" ? "bg-blue-900 text-white shadow" : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
@@ -1560,22 +1910,12 @@ export default function NewRequirement() {
 
                 <button
                   onClick={() => setAiChartTab("port_queue")}
-                  className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
+                  className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 shrink-0 ${
                     aiChartTab === "port_queue" ? "bg-blue-900 text-white shadow" : "text-slate-600 hover:text-slate-900"
                   }`}
                 >
                   <Anchor size={13} />
                   <span>Port Turnaround Stages</span>
-                </button>
-
-                <button
-                  onClick={() => setAiChartTab("shap_factors")}
-                  className={`px-3 py-1.5 rounded-md transition-all flex items-center gap-1.5 ${
-                    aiChartTab === "shap_factors" ? "bg-blue-900 text-white shadow" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  <Cpu size={13} />
-                  <span>SHAP Feature Attribution</span>
                 </button>
               </div>
             </div>
@@ -1635,106 +1975,125 @@ export default function NewRequirement() {
                     <span className="text-slate-500 ml-2">Traditional Fragmented Booking vs ASTRA AI Multimodal Optimization</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[11px] font-bold">
+                    <span className="px-2.5 py-0.5 rounded bg-emerald-100 text-emerald-800 text-[11px] font-bold">
                       Net Multimodal Savings: +${selectedContractor.savingsUsd.toLocaleString()}
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-normal">
-                      (Source: datasets/inland_multimodal_corridors.csv)
                     </span>
                   </div>
                 </div>
 
                 <div className="h-[280px] w-full bg-slate-50/50 p-2 rounded-xl border border-slate-100">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={costBreakdownData} margin={{ top: 10, right: 20, left: 20, bottom: 0 }}>
+                    <BarChart 
+                      data={costBreakdownData} 
+                      margin={{ top: 10, right: 20, left: 20, bottom: 0 }}
+                      onMouseMove={(state) => {
+                        if (state && state.activeLabel) {
+                          setHoveredCostCategory(state.activeLabel);
+                        }
+                      }}
+                      onMouseLeave={() => setHoveredCostCategory(null)}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis dataKey="category" tick={{ fontSize: 10, fill: "#64748b" }} />
                       <YAxis tick={{ fontSize: 10, fill: "#64748b" }} tickFormatter={(v) => `$${(v/1000).toFixed(0)}k`} />
-                      <Tooltip 
-                        content={({ active, payload, label }) => {
-                          if (!active || !payload || !payload.length) return null;
-                          const item = costBreakdownData.find(c => c.category === label);
-                          const trad = payload.find(p => p.dataKey === "Traditional Booking")?.value || 0;
-                          const astra = payload.find(p => p.dataKey === "ASTRA Multimodal AI")?.value || 0;
-                          const saved = Math.max(0, trad - astra);
-                          return (
-                            <div className="bg-slate-950 text-white p-3 rounded-xl shadow-xl border border-slate-800 text-xs font-mono max-w-xs space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
-                              <div className="font-bold text-slate-200 border-b border-slate-800 pb-1 flex justify-between items-center">
-                                <span>{label}</span>
-                                <span className="text-[10px] text-emerald-400 font-normal">-$ {saved.toLocaleString()} Saved</span>
-                              </div>
-                              <div className="flex justify-between gap-4 text-slate-400">
-                                <span>Traditional:</span>
-                                <span className="text-slate-200 font-semibold">${Number(trad).toLocaleString()}</span>
-                              </div>
-                              <div className="flex justify-between gap-4 text-emerald-400">
-                                <span>ASTRA AI:</span>
-                                <span className="font-bold text-emerald-300">${Number(astra).toLocaleString()}</span>
-                              </div>
-                              {item?.whyCheaper && (
-                                <div className="text-[10px] text-slate-300 pt-1 border-t border-slate-800 leading-tight">
-                                  💡 <span className="text-slate-400">Why cheaper:</span> {item.whyCheaper}
-                                </div>
-                              )}
-                              <div className="text-[9px] text-slate-500 pt-0.5">
-                                📁 Source: datasets/{item?.dataset}
-                              </div>
-                            </div>
-                          );
-                        }}
-                      />
+                      {/* Floating tooltip disabled so blackbox does not cover the chart; user reads the highlighted card below */}
+                      <Tooltip content={() => null} cursor={{ fill: "rgba(226, 232, 240, 0.45)" }} />
                       <Legend wrapperStyle={{ fontSize: "11px", fontFamily: "monospace" }} />
-                      <Bar dataKey="Traditional Booking" fill="#94a3b8" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="ASTRA Multimodal AI" fill="#059669" radius={[4, 4, 0, 0]} />
+                      <Bar dataKey="Traditional Booking" fill="#94a3b8" radius={[4, 4, 0, 0]}>
+                        {costBreakdownData.map((entry, index) => (
+                          <Cell 
+                            key={`trad-${index}`} 
+                            fill="#94a3b8" 
+                            opacity={hoveredCostCategory ? (hoveredCostCategory === entry.category ? 1 : 0.35) : 0.85} 
+                          />
+                        ))}
+                      </Bar>
+                      <Bar dataKey="ASTRA Multimodal AI" fill="#059669" radius={[4, 4, 0, 0]}>
+                        {costBreakdownData.map((entry, index) => (
+                          <Cell 
+                            key={`astra-${index}`} 
+                            fill={hoveredCostCategory === entry.category ? "#047857" : "#059669"} 
+                            opacity={hoveredCostCategory ? (hoveredCostCategory === entry.category ? 1 : 0.35) : 1} 
+                          />
+                        ))}
+                      </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
 
-                {/* Interactive Explanatory Cards with Hover Effect */}
+                {/* Interactive Explanatory Cards with Hover Effect & Full Details from Blackbox */}
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-xs font-mono">
-                  {costBreakdownData.slice(0, 4).map((c) => (
-                    <div 
-                      key={c.category}
-                      onMouseEnter={() => setHoveredCostCategory(c.category)}
-                      onMouseLeave={() => setHoveredCostCategory(null)}
-                      className={`p-3 rounded-lg border transition-all duration-200 cursor-pointer ${
-                        hoveredCostCategory === c.category
-                          ? "bg-emerald-50/60 border-emerald-400 shadow-md -translate-y-1"
-                          : "bg-slate-50 border-slate-200 hover:border-slate-300"
-                      }`}
-                    >
-                      <div className="flex justify-between items-start">
-                        <span className="text-slate-500 text-[10px] uppercase font-bold">{c.category}</span>
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100/80 px-1.5 py-0.5 rounded">
-                          Save ${c.savings.toLocaleString()}
-                        </span>
+                  {costBreakdownData.slice(0, 4).map((c) => {
+                    const isHovered = hoveredCostCategory === c.category;
+                    return (
+                      <div 
+                        key={c.category}
+                        onMouseEnter={() => setHoveredCostCategory(c.category)}
+                        onMouseLeave={() => setHoveredCostCategory(null)}
+                        className={`p-3.5 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between ${
+                          isHovered
+                            ? "bg-emerald-50/95 border-emerald-500 ring-2 ring-emerald-500/40 shadow-xl -translate-y-1.5 scale-[1.01]"
+                            : hoveredCostCategory
+                            ? "bg-slate-50/80 border-slate-200 opacity-60 hover:opacity-100"
+                            : "bg-slate-50/90 border-slate-200 hover:border-slate-300 hover:shadow-sm"
+                        }`}
+                      >
+                        <div>
+                          <div className="flex justify-between items-start gap-1 pb-2 border-b border-slate-200/80">
+                            <span className="text-slate-800 text-[11px] uppercase font-bold tracking-tight">{c.category}</span>
+                            <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded-md border border-emerald-200 shrink-0">
+                              Save ${c.savings.toLocaleString()}
+                            </span>
+                          </div>
+
+                          {/* Cost Comparison: Traditional vs ASTRA AI */}
+                          <div className="py-2.5 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px] text-slate-500">
+                              <span>Traditional:</span>
+                              <span className="font-semibold text-slate-600 line-through">${c["Traditional Booking"].toLocaleString()}</span>
+                            </div>
+                            <div className="flex items-center justify-between text-xs">
+                              <span className="font-bold text-emerald-900">ASTRA AI:</span>
+                              <span className="font-extrabold text-emerald-700 text-sm">${c["ASTRA Multimodal AI"].toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Full Why Cheaper Explanation */}
+                        <div className="pt-2.5 mt-1 border-t border-slate-200/80 text-[11px] text-slate-700 leading-snug">
+                          <span className="text-amber-800 font-bold">💡 Why cheaper: </span>
+                          <span>{c.whyCheaper}</span>
+                        </div>
                       </div>
-                      <div className="font-extrabold text-slate-900 text-sm mt-1">
-                        ${c["ASTRA Multimodal AI"].toLocaleString()}
-                      </div>
-                      <div className="text-[10px] text-slate-600 mt-1 line-clamp-2">
-                        {c.whyCheaper}
-                      </div>
-                      <div className="mt-2 pt-1 border-t border-slate-200/60 text-[9px] text-slate-400 flex items-center gap-1">
-                        <span>📁</span>
-                        <span className="truncate">{c.dataset}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 {/* Demurrage Risk Shield Highlight Box */}
-                <div className="p-3 bg-emerald-50/80 rounded-lg border border-emerald-200 text-xs font-mono text-emerald-950 flex flex-col md:flex-row md:items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck size={18} className="text-emerald-700 shrink-0" />
+                <div 
+                  onMouseEnter={() => setHoveredCostCategory("Demurrage Risk")}
+                  onMouseLeave={() => setHoveredCostCategory(null)}
+                  className={`p-3.5 rounded-xl border text-xs font-mono transition-all duration-200 cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-2.5 ${
+                    hoveredCostCategory === "Demurrage Risk"
+                      ? "bg-emerald-100/90 border-emerald-500 ring-2 ring-emerald-500/40 shadow-lg -translate-y-1"
+                      : "bg-emerald-50/80 border-emerald-200 hover:border-emerald-300"
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5">
+                    <ShieldCheck size={20} className="text-emerald-700 shrink-0" />
                     <div>
-                      <span className="font-bold">Demurrage Risk Protected ($0 Charge):</span>
-                      <span className="text-slate-600 ml-1">
-                        Traditional chartering risks <strong>${Math.round(selectedContractor.demurragePerHourUsd * (activeDest.waitHours || 12) * 0.8).toLocaleString()}</strong> in port waiting fees.
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="font-bold text-slate-900">Demurrage Risk Protected ($0 Charge):</span>
+                        <span className="text-[10px] font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200">
+                          Save ${Math.round(selectedContractor.demurragePerHourUsd * (activeDest.waitHours || 12) * 0.8).toLocaleString()}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-600 mt-0.5">
+                        Traditional chartering risks <strong>${Math.round(selectedContractor.demurragePerHourUsd * (activeDest.waitHours || 12) * 0.8).toLocaleString()}</strong> in port waiting fees. 💡 <strong className="text-amber-800">Why cheaper:</strong> Zero demurrage — Just-In-Time (JIT) vessel arrival eliminates the average {activeDest.waitHours || 12}-hour anchorage wait.
+                      </div>
                     </div>
                   </div>
-                  <span className="px-2 py-0.5 rounded bg-emerald-700 text-white text-[10px] font-bold self-start md:self-auto">
+                  <span className="px-2.5 py-1 rounded bg-emerald-700 text-white text-[10px] font-bold shrink-0 self-start md:self-auto">
                     JIT Siding Alignment Active
                   </span>
                 </div>
@@ -1753,96 +2112,141 @@ export default function NewRequirement() {
                     <span className="px-2.5 py-0.5 rounded bg-amber-100 text-amber-800 text-[10px] font-bold">
                       Historical Wait Queue: {activeDest.waitHours}h
                     </span>
-                    <span className="text-[10px] text-slate-500 font-normal">
-                      (Source: datasets/east_coast_india_port_telemetry.csv)
-                    </span>
                   </div>
                 </div>
 
                 <div className="h-[280px] w-full bg-slate-50/50 p-2 rounded-xl border border-slate-100">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={portQueueStages} layout="vertical" margin={{ top: 10, right: 30, left: 40, bottom: 0 }}>
+                    <BarChart 
+                      data={portQueueStages} 
+                      layout="vertical" 
+                      margin={{ top: 10, right: 30, left: 40, bottom: 0 }}
+                      onMouseMove={(state) => {
+                        if (state && state.activeLabel) {
+                          setHoveredPortStage(state.activeLabel);
+                        } else if (state && state.activePayload && state.activePayload.length) {
+                          setHoveredPortStage(state.activePayload[0].payload?.stage || null);
+                        }
+                      }}
+                      onMouseLeave={() => setHoveredPortStage(null)}
+                    >
                       <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
                       <XAxis type="number" tick={{ fontSize: 10, fill: "#64748b" }} unit="h" />
                       <YAxis dataKey="stage" type="category" tick={{ fontSize: 10, fill: "#64748b" }} width={140} />
-                      <Tooltip 
-                        content={({ active, payload, label }) => {
-                          if (!active || !payload || !payload.length) return null;
-                          const stage = portQueueStages.find(s => s.stage === label);
-                          return (
-                            <div className="bg-slate-950 text-white p-3 rounded-xl shadow-xl border border-slate-800 text-xs font-mono max-w-xs space-y-1.5 animate-in fade-in zoom-in-95 duration-150">
-                              <div className="font-bold text-slate-200 border-b border-slate-800 pb-1 flex justify-between items-center">
-                                <span>{label}</span>
-                                <span className={`text-[10px] px-1.5 py-0.2 rounded font-bold ${
-                                  stage?.type === "Waiting" ? "bg-amber-900/60 text-amber-300" :
-                                  stage?.type === "Operations" ? "bg-blue-900/60 text-blue-300" : "bg-emerald-900/60 text-emerald-300"
-                                }`}>
-                                  {stage?.hours} Hours
-                                </span>
-                              </div>
-                              <div className="text-[11px] text-slate-300 leading-tight">
-                                {stage?.desc}
-                              </div>
-                              <div className="text-[10px] text-amber-300 pt-1 border-t border-slate-800">
-                                🎯 <span className="text-slate-400">Company impact:</span> {stage?.whyItMatters}
-                              </div>
-                              <div className="text-[9px] text-slate-500 pt-0.5">
-                                📁 Source: datasets/{stage?.dataset}
-                              </div>
-                            </div>
-                          );
-                        }}
-                      />
+                      {/* Floating tooltip disabled so blackbox does not cover the chart; user reads the highlighted card below */}
+                      <Tooltip content={() => null} cursor={{ fill: "rgba(226, 232, 240, 0.45)" }} />
                       <Bar dataKey="hours" radius={[0, 4, 4, 0]}>
-                        {portQueueStages.map((entry, index) => (
-                          <Cell 
-                            key={`cell-${index}`} 
-                            fill={entry.type === "Waiting" ? "#f59e0b" : entry.type === "Operations" ? "#1e3a8a" : "#059669"} 
-                          />
-                        ))}
+                        {portQueueStages.map((entry, index) => {
+                          const baseColor = entry.type === "Waiting" ? "#f59e0b" : entry.type === "Operations" ? "#1e3a8a" : "#059669";
+                          const isHovered = hoveredPortStage === entry.stage;
+                          return (
+                            <Cell 
+                              key={`cell-${index}`} 
+                              fill={baseColor}
+                              opacity={hoveredPortStage ? (isHovered ? 1 : 0.35) : 0.9}
+                              className="cursor-pointer transition-opacity duration-150"
+                            />
+                          );
+                        })}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
 
-                {/* Interactive 5-Stage Step Breakdown with Hover Zoom */}
-                <div className="grid grid-cols-1 md:grid-cols-5 gap-2 text-xs font-mono">
-                  {portQueueStages.map((s, idx) => (
-                    <div
-                      key={s.stage}
-                      onMouseEnter={() => setHoveredPortStage(s.stage)}
-                      onMouseLeave={() => setHoveredPortStage(null)}
-                      className={`p-2.5 rounded-lg border transition-all duration-200 cursor-pointer ${
-                        hoveredPortStage === s.stage
-                          ? s.type === "Waiting"
-                            ? "bg-amber-50 border-amber-400 shadow-md -translate-y-1"
-                            : s.type === "Operations"
-                            ? "bg-blue-50 border-blue-400 shadow-md -translate-y-1"
-                            : "bg-emerald-50 border-emerald-400 shadow-md -translate-y-1"
-                          : "bg-slate-50 border-slate-200 hover:border-slate-300"
-                      }`}
-                    >
-                      <div className="flex justify-between items-center text-[10px]">
-                        <span className="text-slate-400">Stage {idx + 1}</span>
-                        <span className={`px-1 py-0.2 rounded text-[9px] font-bold ${
-                          s.type === "Waiting" ? "bg-amber-100 text-amber-800" :
-                          s.type === "Operations" ? "bg-blue-100 text-blue-800" : "bg-emerald-100 text-emerald-800"
-                        }`}>
-                          {s.status}
+                {/* Interactive 5-Stage Step Breakdown with Synchronized Hover (Replaces Floating Blackbox) */}
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-2.5 text-xs font-mono">
+                  {portQueueStages.map((s, idx) => {
+                    const isHovered = hoveredPortStage === s.stage;
+                    const pctOfStay = Math.round((s.hours / Number(totalPortHours)) * 100);
+                    
+                    const themeClasses = isHovered
+                      ? s.type === "Waiting"
+                        ? "bg-amber-50/95 border-amber-500 ring-2 ring-amber-400/40 shadow-xl -translate-y-1.5 scale-[1.01]"
+                        : s.type === "Operations"
+                        ? "bg-blue-50/95 border-blue-500 ring-2 ring-blue-400/40 shadow-xl -translate-y-1.5 scale-[1.01]"
+                        : "bg-emerald-50/95 border-emerald-500 ring-2 ring-emerald-400/40 shadow-xl -translate-y-1.5 scale-[1.01]"
+                      : hoveredPortStage
+                      ? "bg-slate-50/70 border-slate-200 opacity-60 hover:opacity-100"
+                      : "bg-slate-50/90 border-slate-200 hover:border-slate-300 hover:shadow-sm";
+
+                    const badgeClasses = s.type === "Waiting"
+                      ? "bg-amber-100 text-amber-900 border border-amber-300"
+                      : s.type === "Operations"
+                      ? "bg-blue-100 text-blue-900 border border-blue-300"
+                      : "bg-emerald-100 text-emerald-900 border border-emerald-300";
+
+                    return (
+                      <div
+                        key={s.stage}
+                        onMouseEnter={() => setHoveredPortStage(s.stage)}
+                        onMouseLeave={() => setHoveredPortStage(null)}
+                        className={`p-3 rounded-xl border transition-all duration-200 cursor-pointer flex flex-col justify-between ${themeClasses}`}
+                      >
+                        <div>
+                          <div className="flex justify-between items-center text-[10px] pb-1.5 border-b border-slate-200/70">
+                            <span className="text-slate-500 font-semibold">Stage {idx + 1}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${badgeClasses}`}>
+                              {s.status}
+                            </span>
+                          </div>
+                          
+                          <div className="font-bold text-slate-900 mt-2 text-[12px] leading-snug">
+                            {s.stage}
+                          </div>
+                          
+                          <div className="flex items-baseline gap-1.5 mt-1">
+                            <span className="text-base font-extrabold text-slate-900">{s.hours}h</span>
+                            <span className="text-[10px] text-slate-500 font-medium">({pctOfStay}% of stay)</span>
+                          </div>
+
+                          {/* Full Operational Description from previous blackbox */}
+                          <div className="text-[11px] text-slate-600 mt-2 leading-relaxed">
+                            {s.desc}
+                          </div>
+                        </div>
+
+                        {/* Company Impact Callout from previous blackbox */}
+                        <div className="mt-2.5 pt-2 border-t border-slate-200/80 text-[10px] leading-relaxed">
+                          <span className="text-slate-400 uppercase font-bold text-[9px] block">Company Impact:</span>
+                          <span className={s.type === "Waiting" ? "text-amber-900 font-semibold" : "text-slate-700"}>
+                            🎯 {s.whyItMatters}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* Highlighted Stage Live Inspector Box */}
+                {hoveredPortStage && (() => {
+                  const activeStage = portQueueStages.find(s => s.stage === hoveredPortStage);
+                  if (!activeStage) return null;
+                  return (
+                    <div className="p-3 bg-slate-900 text-white rounded-xl border border-slate-800 text-xs font-mono flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-lg animate-in fade-in zoom-in-95 duration-150">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-amber-400 text-sm">{activeStage.stage}</span>
+                          <span className={`text-[10px] px-2 py-0.5 rounded font-bold ${
+                            activeStage.type === "Waiting" ? "bg-amber-900/80 text-amber-300 border border-amber-700" :
+                            activeStage.type === "Operations" ? "bg-blue-900/80 text-blue-300 border border-blue-700" :
+                            "bg-emerald-900/80 text-emerald-300 border border-emerald-700"
+                          }`}>
+                            {activeStage.hours} Hours ({Math.round((activeStage.hours / Number(totalPortHours)) * 100)}% of stay) · {activeStage.status}
+                          </span>
+                        </div>
+                        <p className="text-slate-300 text-[11px] leading-relaxed">
+                          {activeStage.desc}
+                        </p>
+                      </div>
+                      <div className="md:border-l md:border-slate-800 md:pl-4 shrink-0 text-[11px] max-w-sm">
+                        <span className="text-slate-400 block text-[10px] uppercase font-bold">Operational Impact:</span>
+                        <span className="text-emerald-400 font-semibold leading-tight">
+                          🎯 {activeStage.whyItMatters}
                         </span>
                       </div>
-                      <div className="font-bold text-slate-900 mt-1 truncate" title={s.stage}>
-                        {s.stage}
-                      </div>
-                      <div className="text-sm font-extrabold text-slate-800 mt-0.5">
-                        {s.hours}h <span className="text-[10px] text-slate-400 font-normal">({Math.round((s.hours / Number(totalPortHours)) * 100)}%)</span>
-                      </div>
-                      <div className="text-[10px] text-slate-500 mt-1 line-clamp-2" title={s.whyItMatters}>
-                        {s.whyItMatters}
-                      </div>
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
 
                 <div className="p-3 bg-blue-50 rounded-lg border border-blue-200 text-xs font-mono text-blue-950 flex flex-col md:flex-row md:items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
@@ -1858,90 +2262,7 @@ export default function NewRequirement() {
               </div>
             )}
 
-            {/* TAB 4: SHAP ATTRIBUTION FACTORS */}
-            {aiChartTab === "shap_factors" && (
-              <div className="space-y-4 animate-in fade-in">
-                <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono">
-                  <div>
-                    <span className="font-bold text-slate-900">SHAP Feature Importance & Attribution Matrix:</span>
-                    <span className="text-slate-500 ml-2">Explains key drivers of the AI optimization decision</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-blue-900 font-bold bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                      Model Accuracy: 94.6% (180-Day Backtested)
-                    </span>
-                    <span className="text-[10px] text-slate-500 font-normal">
-                      (Source: datasets/baltic_dry_freight_historical.csv)
-                    </span>
-                  </div>
-                </div>
 
-                <div className="space-y-3 pt-2">
-                  {shapFeatures.map((f) => {
-                    const isHovered = hoveredShapFactor === f.factor;
-                    return (
-                      <div 
-                        key={f.factor}
-                        onMouseEnter={() => setHoveredShapFactor(f.factor)}
-                        onMouseLeave={() => setHoveredShapFactor(null)}
-                        className={`p-3 rounded-lg border transition-all duration-200 cursor-pointer text-xs font-mono space-y-1.5 ${
-                          isHovered 
-                            ? "bg-blue-50/70 border-blue-400 shadow-md -translate-y-0.5" 
-                            : "bg-slate-50 border-slate-200 hover:border-slate-300"
-                        }`}
-                      >
-                        <div className="flex justify-between items-center">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-slate-900">{f.factor}</span>
-                            <span className="text-[10px] px-1.5 py-0.2 rounded bg-slate-200/80 text-slate-600 font-semibold">
-                              {f.impact}
-                            </span>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-[10px] text-slate-500 hidden sm:inline">{f.trend}</span>
-                            <span className="font-extrabold text-blue-900 text-sm">{f.weight}%</span>
-                          </div>
-                        </div>
-
-                        {/* Animated Progress Bar */}
-                        <div className="w-full bg-slate-200 h-2.5 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full rounded-full transition-all duration-300 ${
-                              isHovered 
-                                ? "bg-gradient-to-r from-blue-700 to-indigo-500 shadow-sm" 
-                                : "bg-blue-900"
-                            }`} 
-                            style={{ width: `${f.weight * 2.5}%` }}
-                          />
-                        </div>
-
-                        {/* Company Meaning and Dataset Source */}
-                        <div className="flex flex-wrap items-center justify-between text-[11px] pt-1 border-t border-slate-200/50 gap-1">
-                          <span className="text-slate-600">
-                            💡 <strong className="text-slate-800">Company Impact:</strong> {f.companyExplanation}
-                          </span>
-                          <span className="text-[9px] text-slate-400 shrink-0">
-                            📁 datasets/{f.dataset} ➔ [{f.column}]
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Procurement Strategic Takeaway Box */}
-                <div className="p-3 bg-slate-900 text-white rounded-lg border border-slate-800 text-xs font-mono flex items-start gap-3">
-                  <Sparkles size={16} className="text-amber-400 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold text-amber-300">Executive Procurement Takeaway:</span>
-                    <p className="text-slate-300 text-[11px] mt-0.5 leading-relaxed">
-                      57.7% of the freight price pressure is driven by macro shipping market forces (Baltic Dry Index + Fuel).
-                      Locking today's contracted spot rate protects your company from the projected +$0.50/t forward spike, securing <strong>+$35,000 net cost avoidance</strong> for your 70,000 MT bulk cargo shipment.
-                    </p>
-                  </div>
-                </div>
-              </div>
-            )}
           </div>
 
           {/* Navigation Buttons */}
@@ -1961,64 +2282,365 @@ export default function NewRequirement() {
       )}
 
       {/* ========================================================================= */}
-      {/* STEP 4: CONFIRMATION & DIGITAL CONTRACT DISPATCH */}
+      {/* STEP 4: EXECUTIVE DECISION DOSSIER & FORMAL MEMORANDUM REPORT */}
       {/* ========================================================================= */}
       {step === 4 && (
-        <div className="astra-card p-6 space-y-6 animate-in fade-in">
-          <div className="border-b border-slate-100 pb-3">
-            <div className="flex items-center gap-2">
-              <FileCheck size={20} className="text-blue-900" />
-              <h2 className="text-lg font-extrabold text-slate-900" style={{ fontFamily: "Manrope" }}>
-                Step 4: Digital Smart Fixture Contract Confirmation
-              </h2>
-            </div>
-            <p className="text-xs text-slate-500 mt-0.5">
-              Review finalized parameters. Dispatching will notify Ocean Contractor and Road Transporter, save to history, and initiate the live simulation.
-            </p>
-          </div>
-
-          {/* Visual Digital Fixture Card */}
-          <div className="border-2 border-slate-200 rounded-xl p-5 bg-slate-50/50 space-y-4 font-mono text-xs">
-            <div className="flex justify-between items-center border-b border-slate-200 pb-3">
-              <div>
-                <span className="text-[10px] text-slate-400 font-bold uppercase">FIXTURE IDENTIFIER</span>
-                <div className="text-sm font-extrabold text-slate-900">ASTRA-MULTIMODAL-2026-FIXTURE</div>
-              </div>
-              <span className="px-3 py-1 rounded bg-emerald-100 text-emerald-900 font-bold text-xs">
-                VERIFIED & READY TO EXECUTE
-              </span>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1.5">
-                <div>• Shipper: <span className="font-bold text-slate-900">Tata Steel Logistics (Company)</span></div>
-                <div>• Ocean Carrier: <span className="font-bold text-blue-900">{selectedContractor.name} ({selectedContractor.vessel.name})</span></div>
-                <div>• Road Transporter: <span className="font-bold text-amber-700">{selectedContractor.roadTransporter} ({selectedContractor.firstMileTrucks + selectedContractor.lastMileTrucks} Trucks)</span></div>
-                <div>• Cargo: <span className="font-bold text-slate-900">{cargoQuantity.toLocaleString()} MT {cargoType}</span></div>
-                <div>• Vessel Class: <span className="font-bold text-slate-900">{preferredVesselCategory} (Beam: {currentSpec.beam}m, LOA: {currentSpec.loa}m, Draft: {currentSpec.draft}m)</span></div>
-              </div>
-
-              <div className="space-y-1.5">
-                <div>• Route: <span className="font-bold text-slate-900">{activeOrigin.port} ({activeOrigin.country}) ➔ {destPort} Port</span></div>
-                <div>• Laycan Date: <span className="font-bold text-slate-900">{requiredArrivalDate} ({contractDuration})</span></div>
-                <div>• Hinterland Siding: <span className="font-bold text-slate-900">{activeOrigin.warehouse}</span></div>
-                <div>• Destination Plant: <span className="font-bold text-slate-900">{activeDest.plant}</span></div>
-                <div>• Total Landed Cost: <span className="font-bold text-emerald-700">${selectedContractor.totalLandedCostUsd.toLocaleString()} USD</span></div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex justify-between items-center pt-2">
-            <button onClick={() => setStep(3)} className="btn-secondary">
-              <ArrowLeft size={15} /> Back
-            </button>
-            <button
-              onClick={handleConfirmAndDispatch}
-              className="btn-primary px-10 h-12 text-sm font-bold gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-lg"
+        <div className="space-y-6 animate-in fade-in" data-testid="executive-dossier-report">
+          {/* Top Actions & Breadcrumb Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 no-print print:hidden">
+            <button 
+              onClick={() => setStep(3)} 
+              className="btn-secondary text-xs flex items-center gap-1.5"
             >
-              <CheckCircle2 size={18} />
-              <span>Confirm, Accept & Launch Live Simulation</span>
+              <ArrowLeft size={14} /> Back to AI Analysis
             </button>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-slate-500 bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 hidden sm:inline">
+                Dossier: ASTRA-MEMO-VOY-2026-{String(cargoQuantity).slice(0, 3)}
+              </span>
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-4 py-2 rounded-lg bg-blue-900 text-white font-mono font-bold text-xs hover:bg-blue-800 transition shadow flex items-center gap-2"
+              >
+                <Printer size={15} />
+                <span>Print / Export Executive Memorandum (PDF)</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Master Formal Executive Memorandum Card */}
+          <div className="bg-white border-2 border-slate-300 rounded-2xl p-6 sm:p-10 shadow-xl space-y-8 font-sans print:border-none print:shadow-none print:p-2 text-slate-900">
+            
+            {/* Formal Masthead & Executive Letterhead (Clean typography, no external logo) */}
+            <div className="border-b-2 border-slate-900 pb-5">
+              <div className="flex flex-col md:flex-row md:items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold tracking-widest text-blue-900 uppercase bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                      ASTRA MARITIME MULTIMODAL INTELLIGENCE · EXECUTIVE MEMORANDUM
+                    </span>
+                  </div>
+                  <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight" style={{ fontFamily: "Manrope" }}>
+                    Dry-Bulk Vessel Chartering & Logistics Decision Dossier
+                  </h1>
+                  <p className="text-xs text-slate-600 font-medium">
+                    East Coast India Strategic Bulk Import Logistics, Intermodal Routing & Freight Risk Assessment
+                  </p>
+                </div>
+
+                {/* Formal Document Meta Box */}
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 font-mono text-[11px] space-y-1 text-slate-600 shrink-0 min-w-[280px]">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Dossier Ref:</span>
+                    <strong className="text-slate-900">ASTRA-MEMO-VOY-2026-{String(cargoQuantity).slice(0, 3)}</strong>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Date & Time:</span>
+                    <span>{todayStr} · Live Execution</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Standard:</span>
+                    <span className="text-blue-900 font-bold">ISO-IEC-IEEE 29148 / BIMCO</span>
+                  </div>
+                  <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
+                    <span className="text-slate-400">Shipper Entity:</span>
+                    <strong className="text-slate-900 truncate max-w-[160px]">{companyName}</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section A — Executive Decision Summary & Mandate */}
+            <div className="bg-gradient-to-r from-blue-50/90 to-indigo-50/80 border border-blue-200 rounded-xl p-5 space-y-3">
+              <div className="flex items-center gap-2 text-blue-900 font-extrabold text-sm uppercase tracking-wide font-mono">
+                <ShieldCheck size={18} className="text-blue-900 shrink-0" />
+                <span>Section A — Executive Decision Summary & Mandate</span>
+              </div>
+              <p className="text-xs sm:text-sm text-slate-800 leading-relaxed font-sans">
+                <strong>Executive Recommendation:</strong> Execute immediate vessel fixture under an <strong>Optimized Charter Now</strong> mandate. Chartering operations should fix <strong>{preferredVesselCategory}</strong> tonnage ({currentSpec.desc}) via <strong>{selectedContractor.name}</strong> under a <strong>{contractDuration}</strong> structure across the scheduled import campaign ({Number(cargoQuantity).toLocaleString()} MT total cargo volume).
+              </p>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1 text-xs font-mono">
+                <div className="p-2.5 bg-white/90 rounded-lg border border-blue-200 flex items-center justify-between">
+                  <span className="text-slate-600 font-medium">Estimated Commercial Benefit:</span>
+                  <span className="font-extrabold text-emerald-700 text-sm">
+                    +${selectedContractor.savingsUsd.toLocaleString()} USD Cost Avoidance
+                  </span>
+                </div>
+                <div className="p-2.5 bg-white/90 rounded-lg border border-blue-200 flex items-center justify-between">
+                  <span className="text-slate-600 font-medium">Demurrage Risk Shield:</span>
+                  <span className="font-bold text-blue-900">
+                    Zero Demurrage (JIT Pre-Allocated Berth)
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section B — Cargo & Voyage Operational Specifications */}
+            <div className="space-y-3">
+              <div className="text-xs font-mono font-extrabold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-1.5 flex items-center gap-2">
+                <Ship size={15} className="text-slate-700" />
+                <span>Section B — Cargo & Voyage Operational Specifications</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-mono">
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">COMMODITY</span>
+                  <div className="font-extrabold text-slate-900 text-sm">{cargoType}</div>
+                  <span className="text-[11px] text-slate-500">Dry Bulk Industrial Classification</span>
+                </div>
+
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">PARCEL QUANTITY</span>
+                  <div className="font-extrabold text-slate-900 text-sm">{Number(cargoQuantity).toLocaleString()} MT</div>
+                  <span className="text-[11px] text-emerald-700 font-bold">±5% MOLOO Margin Standard</span>
+                </div>
+
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">ORIGIN FAIRWAY & SIDING</span>
+                  <div className="font-extrabold text-slate-900 text-sm">{activeOrigin.port}, {activeOrigin.country}</div>
+                  <span className="text-[11px] text-slate-500 truncate block">{activeOrigin.warehouse} ({activeOrigin.distNm} NM)</span>
+                </div>
+
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">DESTINATION JETTY & FACILITY</span>
+                  <div className="font-extrabold text-slate-900 text-sm">{destPort} Port ({activeDest.state})</div>
+                  <span className="text-[11px] text-slate-500 truncate block">{activeDest.plant} · Max Draft: {activeDest.maxDraft}m</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-mono pt-1">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center">
+                  <span className="text-slate-500 font-semibold">Laycan Window:</span>
+                  <strong className="text-slate-900">{requiredArrivalDate} (Earliest Selectable Arrival)</strong>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex justify-between items-center">
+                  <span className="text-slate-500 font-semibold">Contract Structure:</span>
+                  <strong className="text-blue-900">{contractDuration} ({contractDuration === "1 voyage (Spot)" ? "1 Single Delivery" : `${expectedVoyages}x Sequential Voyages`})</strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Section C — Recommended Multimodal Execution Plan & Vessel Specification */}
+            <div className="space-y-3">
+              <div className="text-xs font-mono font-extrabold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-1.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Award size={15} className="text-blue-900" />
+                  <span>Section C — Selected Execution Plan & Vessel Technical Specifications</span>
+                </div>
+                <span className="text-[10px] font-bold text-blue-900 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
+                  {selectedPlan.label}: {selectedPlan.tag}
+                </span>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3 text-xs font-mono">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-bold">NOMINATED VESSEL CLASS & NAME</span>
+                    <div className="text-sm font-extrabold text-blue-900 mt-0.5">
+                      {preferredVesselCategory} · {selectedContractor.vessel.name}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      {currentSpec.dwt.toLocaleString()} DWT · {selectedContractor.vessel.flag || "Panama"} Flag
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-bold">VESSEL DIMENSIONS & FAIRWAY CLEARANCE</span>
+                    <div className="text-sm font-extrabold text-slate-900 mt-0.5">
+                      Beam: {currentSpec.beam}m · LOA: {currentSpec.loa}m · Draft: {currentSpec.draft}m
+                    </div>
+                    <div className={`text-[11px] font-bold ${activeDest.maxDraft >= currentSpec.draft ? "text-emerald-700" : "text-amber-700"}`}>
+                      {activeDest.maxDraft >= currentSpec.draft 
+                        ? `✓ Safe Direct Berth (+${(activeDest.maxDraft - currentSpec.draft).toFixed(1)}m underkeel margin)`
+                        : `⚠️ Deepwater transshipment / lightering required at ${destPort} (${activeDest.maxDraft}m limit)`}
+                    </div>
+                  </div>
+
+                  <div>
+                    <span className="text-[10px] text-slate-400 block font-bold">ENGINE EFFICIENCY & RIGHTSHIP RATING</span>
+                    <div className="text-sm font-extrabold text-emerald-800 mt-0.5">
+                      {selectedContractor.vessel.healthScore || 96.8}% Engine Score · {selectedContractor.vessel.ciiRating || "Grade A"}
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Burn: {selectedContractor.vessel.dailyFuelBurn || "48.5 MT/day"} @ 13.8 kts · RightShip 5★
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200 pt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-[11px]">
+                  <div>
+                    <span className="text-slate-400 block font-bold">Logistics Strategy:</span>
+                    <strong className="text-blue-900">{selectedPlan.operatorModelTitle}</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block font-bold">Origin Drayage Partner:</span>
+                    <strong className="text-slate-900">{selectedPlan.originOperator} ({selectedPlan.firstMileTrucks} Tippers)</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block font-bold">Ocean Bulk Carrier:</span>
+                    <strong className="text-slate-900">{selectedPlan.oceanCarrier} ({selectedPlan.contractor?.reliability || "98.4%"})</strong>
+                  </div>
+                  <div>
+                    <span className="text-slate-400 block font-bold">Destination Hinterland:</span>
+                    <strong className="text-slate-900">{selectedPlan.lastMileOperator} ({selectedPlan.lastMileTrucks} Trucks)</strong>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Section D — Multimodal Landed Cost Financial Breakdown */}
+            <div className="space-y-3 print:break-inside-avoid">
+              <div className="text-xs font-mono font-extrabold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-1.5 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <DollarSign size={15} className="text-emerald-700" />
+                  <span>Section D — Multimodal Landed Cost Financial Statement & Cost Avoidance</span>
+                </div>
+                <span className="text-[11px] font-mono text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded font-bold">
+                  Net Realized Savings: +${selectedContractor.savingsUsd.toLocaleString()} USD
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left font-mono text-xs border border-slate-200 rounded-xl overflow-hidden">
+                  <thead className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="py-2.5 px-3">Cost Component</th>
+                      <th className="py-2.5 px-3">Traditional Fragmented Booking</th>
+                      <th className="py-2.5 px-3 text-emerald-900">ASTRA Multimodal AI</th>
+                      <th className="py-2.5 px-3 text-emerald-700">Net Cost Avoidance</th>
+                      <th className="py-2.5 px-3">Operational Basis</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {costBreakdownData.map((row) => (
+                      <tr key={row.category} className="hover:bg-slate-50/70 transition">
+                        <td className="py-2.5 px-3 font-bold text-slate-900">{row.category}</td>
+                        <td className="py-2.5 px-3 text-slate-500 line-through">${row["Traditional Booking"].toLocaleString()}</td>
+                        <td className="py-2.5 px-3 font-extrabold text-slate-900 text-emerald-800">${row["ASTRA Multimodal AI"].toLocaleString()}</td>
+                        <td className="py-2.5 px-3 font-bold text-emerald-700">-${row.savings.toLocaleString()}</td>
+                        <td className="py-2.5 px-3 text-[11px] text-slate-600 max-w-xs">{row.whyCheaper}</td>
+                      </tr>
+                    ))}
+                    {/* Total Summary Row */}
+                    <tr className="bg-slate-900 text-white font-extrabold border-t-2 border-slate-900">
+                      <td className="py-3 px-3 uppercase tracking-wider">TOTAL LANDED COST</td>
+                      <td className="py-3 px-3 text-slate-400 line-through">
+                        ${(selectedContractor.totalLandedCostUsd + selectedContractor.savingsUsd).toLocaleString()}
+                      </td>
+                      <td className="py-3 px-3 text-emerald-400 text-sm">
+                        ${selectedContractor.totalLandedCostUsd.toLocaleString()} USD
+                      </td>
+                      <td className="py-3 px-3 text-emerald-300 text-sm">
+                        +${selectedContractor.savingsUsd.toLocaleString()} SAVED
+                      </td>
+                      <td className="py-3 px-3 text-[11px] text-slate-300">
+                        Unit Rate: <strong>${selectedContractor.landedCostPerTonUsd} / MT Landed</strong>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Section E — Port Turnaround & Hydrodynamic Berth Pipeline */}
+            <div className="space-y-3">
+              <div className="text-xs font-mono font-extrabold text-slate-900 uppercase tracking-wider border-b border-slate-200 pb-1.5 flex items-center gap-2">
+                <Anchor size={15} className="text-amber-600" />
+                <span>Section E — Port Turnaround & Hydrodynamic Berth Pipeline ({destPort} Port)</span>
+              </div>
+
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
+                  <span className="text-[10px] text-slate-400 block font-bold">PILOTAGE & FAIRWAY</span>
+                  <div className="text-base font-extrabold text-slate-900 mt-0.5">2.5 Hours</div>
+                  <span className="text-[10px] text-slate-500">Outer Fairway Navigation</span>
+                </div>
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-center">
+                  <span className="text-[10px] text-emerald-700 block font-bold">ANCHORAGE WAIT</span>
+                  <div className="text-base font-extrabold text-emerald-800 mt-0.5">0.0 Hours</div>
+                  <span className="text-[10px] text-emerald-700 font-bold">JIT Pre-Booking Shield</span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
+                  <span className="text-[10px] text-slate-400 block font-bold">TUG & MOORING</span>
+                  <div className="text-base font-extrabold text-slate-900 mt-0.5">1.5 Hours</div>
+                  <span className="text-[10px] text-slate-500">Twin Tractor Tugs</span>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 text-center">
+                  <span className="text-[10px] text-slate-400 block font-bold">CONVEYOR DISCHARGE</span>
+                  <div className="text-base font-extrabold text-slate-900 mt-0.5">~{dischargeHours} Hours</div>
+                  <span className="text-[10px] text-slate-500">2,800 MT/hr Mechanized Jetty</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Section F — Formal Governance Sign-Off & Execution Action */}
+            <div className="space-y-3 pt-2 border-t-2 border-slate-200">
+              <div className="text-xs font-mono font-extrabold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <FileCheck size={15} className="text-blue-900" />
+                <span>Section F — Formal Governance Sign-Off & Execution Certificate</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2 font-mono text-xs">
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">COMMERCIAL SHIPPERS DESK</span>
+                  <div className="font-extrabold text-slate-900 truncate">{companyName}</div>
+                  <div className="text-[11px] text-slate-500">Procurement & Chartering Authority</div>
+                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300 mt-1">
+                    ✓ DIGITALLY AUTHORIZED
+                  </span>
+                </div>
+
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">CONTRACTOR ALLOCATION DESK</span>
+                  <div className="font-extrabold text-slate-900">{selectedContractor.name}</div>
+                  <div className="text-[11px] text-slate-500">Vessel Operations & Logistics Desk</div>
+                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200 mt-1">
+                    ✓ READY FOR FIXTURE
+                  </span>
+                </div>
+
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-1.5">
+                  <span className="text-[10px] uppercase font-bold text-slate-400 block">CRYPTOGRAPHIC AUDIT PROOF</span>
+                  <div className="text-[11px] text-slate-600 font-mono truncate">SHA-256: 7f9b8c...dossier-2026</div>
+                  <div className="text-[11px] text-slate-500">ISO-29148 Standard Compliant</div>
+                  <span className="inline-block px-2 py-0.5 rounded text-[10px] font-bold bg-slate-200 text-slate-700 mt-1">
+                    TIMESTAMP: {todayStr}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Final Action & Dispatch Controls */}
+            <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 no-print print:hidden">
+              <button 
+                onClick={() => setStep(3)} 
+                className="btn-secondary w-full sm:w-auto"
+              >
+                <ArrowLeft size={15} /> Back to AI Analysis
+              </button>
+
+              <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-5 py-3 rounded-lg border border-slate-300 font-mono font-bold text-xs text-slate-700 hover:bg-slate-50 transition flex items-center justify-center gap-2 w-full sm:w-auto"
+                >
+                  <Printer size={16} />
+                  <span>Print Dossier (PDF)</span>
+                </button>
+
+                <button
+                  onClick={handleConfirmAndDispatch}
+                  className="btn-primary px-8 h-12 text-sm font-bold gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-xl w-full sm:w-auto"
+                >
+                  <CheckCircle2 size={18} />
+                  <span>Authorize & Dispatch Requirement to Contractor Fleet Desk</span>
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
       )}

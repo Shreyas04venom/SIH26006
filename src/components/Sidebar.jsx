@@ -70,11 +70,20 @@ export default function Sidebar({ isOpen = true, onClose }) {
   };
 
   return (
-    <aside
-      className={`transition-all duration-300 ease-in-out shrink-0 bg-slate-50 flex flex-col h-screen sticky top-0 z-30 ${
-        isOpen ? "w-64 border-r border-slate-200 opacity-100" : "w-0 border-r-0 overflow-hidden opacity-0 pointer-events-none"
-      }`}
-    >
+    <>
+      {/* Mobile Backdrop */}
+      {isOpen && (
+        <div
+          onClick={onClose}
+          className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs z-40 lg:hidden print:hidden animate-in fade-in"
+          aria-hidden="true"
+        />
+      )}
+      <aside
+        className={`transition-all duration-300 ease-in-out shrink-0 bg-slate-50 flex flex-col h-screen fixed lg:sticky top-0 left-0 z-50 lg:z-30 print:hidden shadow-2xl lg:shadow-none ${
+          isOpen ? "w-64 border-r border-slate-200 opacity-100 translate-x-0" : "-translate-x-full lg:translate-x-0 lg:w-0 border-r-0 overflow-hidden opacity-0 pointer-events-none"
+        }`}
+      >
       <div className="w-64 flex flex-col h-full flex-1 min-w-[16rem]">
         {/* Brand Header */}
         <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
@@ -146,5 +155,6 @@ export default function Sidebar({ isOpen = true, onClose }) {
       </div>
     </div>
   </aside>
+</>
 );
 }

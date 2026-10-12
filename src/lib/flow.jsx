@@ -111,144 +111,7 @@ export const INITIAL_FIXTURES = [
   }
 ];
 
-export const INITIAL_COMPANY_REQUIREMENTS = [
-  {
-    id: "ASTRA-REQ-001",
-    companyName: "Jindal Steel & Power Ltd (JSPL)",
-    companyCode: "JSPL",
-    cargoType: "Thermal Coal (High GCV)",
-    cargoQuantity: 70000,
-    originWarehouse: "Hunter Valley Mine Siding, NSW",
-    originPort: "Newcastle",
-    destinationPort: "Paradip",
-    destinationWarehouse: "Angul Integrated Steel Complex (WH-07)",
-    preferredVesselCategory: "Panamax",
-    maxDraftM: 14.0,
-    maxLoaM: 229,
-    maxBeamM: 32.5,
-    requiredArrivalDate: "2026-09-14",
-    targetFreightRatePerTon: 16.90,
-    status: "PENDING_REVIEW",
-    createdAt: "15 mins ago",
-    assignedVessel: null,
-    contractorNote: null,
-    rejectionReason: null,
-    recommendedSolution: null,
-    creditRating: "AAA",
-    stowageFactor: "44 cu ft/MT",
-    contactPerson: "Rajesh Varma (VP Logistics)"
-  },
-  {
-    id: "REQ-2026-9102",
-    companyName: "Tata Steel Kalinganagar",
-    companyCode: "TATA",
-    cargoType: "Hard Coking Coal (Peak Low Vol)",
-    cargoQuantity: 75000,
-    originWarehouse: "Queensland Bowen Basin Siding",
-    originPort: "Hay Point",
-    destinationPort: "Paradip",
-    destinationWarehouse: "Kalinganagar Bulk Siding (WH-04)",
-    preferredVesselCategory: "Panamax",
-    maxDraftM: 14.5,
-    maxLoaM: 230,
-    maxBeamM: 32.5,
-    requiredArrivalDate: "2026-09-19",
-    targetFreightRatePerTon: 17.40,
-    status: "PENDING_REVIEW",
-    createdAt: "35 mins ago",
-    assignedVessel: null,
-    contractorNote: null,
-    rejectionReason: null,
-    recommendedSolution: null,
-    creditRating: "AAA",
-    stowageFactor: "46 cu ft/MT",
-    contactPerson: "Arunabha Sengupta (Chartering Lead)"
-  },
-  {
-    id: "REQ-2026-9103",
-    companyName: "NMDC Mineral Logistics",
-    companyCode: "NMDC",
-    cargoType: "High-Grade Iron Ore Pellets (65% Fe)",
-    cargoQuantity: 120000,
-    originWarehouse: "Bailadila Iron Ore Complex",
-    originPort: "Visakhapatnam Outer Harbor",
-    destinationPort: "Haldia / Paradip",
-    destinationWarehouse: "Eastern Coastal Steel Works",
-    preferredVesselCategory: "Capesize",
-    maxDraftM: 16.5,
-    maxLoaM: 280,
-    maxBeamM: 45.0,
-    requiredArrivalDate: "2026-09-24",
-    targetFreightRatePerTon: 12.80,
-    status: "PENDING_REVIEW",
-    createdAt: "1 hour ago",
-    assignedVessel: null,
-    contractorNote: null,
-    rejectionReason: null,
-    recommendedSolution: null,
-    creditRating: "A1+",
-    stowageFactor: "22 cu ft/MT (Dense Heavy Bulk)",
-    contactPerson: "S. K. Murthy (Director Logistics)"
-  },
-  {
-    id: "REQ-2026-9104",
-    companyName: "Vedanta Aluminium & Power",
-    companyCode: "VEDANTA",
-    cargoType: "Metallurgical Alumina & Calcined Coke",
-    cargoQuantity: 45000,
-    originWarehouse: "Lanjigarh Alumina Refinery",
-    originPort: "Dhamra Port Bulk Berth",
-    destinationPort: "Visakhapatnam",
-    destinationWarehouse: "Jharsuguda Smelter Complex",
-    preferredVesselCategory: "Supramax",
-    maxDraftM: 12.0,
-    maxLoaM: 190,
-    maxBeamM: 32.2,
-    requiredArrivalDate: "2026-09-26",
-    targetFreightRatePerTon: 15.20,
-    status: "WAIT_SHIPBUILDER",
-    createdAt: "2 hours ago",
-    assignedVessel: null,
-    contractorNote: "Verifying drydock clearance with Cochin Shipyard for geared Supramax.",
-    rejectionReason: null,
-    recommendedSolution: null,
-    creditRating: "AA+",
-    stowageFactor: "38 cu ft/MT",
-    contactPerson: "Pooja Chhabra (Materials Manager)"
-  },
-  {
-    id: "REQ-2026-9105",
-    companyName: "SAIL (Steel Authority of India)",
-    companyCode: "SAIL",
-    cargoType: "Prime Coking Coal",
-    cargoQuantity: 68000,
-    originWarehouse: "Gladstone Terminal Silos",
-    originPort: "Gladstone",
-    destinationPort: "Visakhapatnam Outer Harbor",
-    destinationWarehouse: "Rourkela Steel Plant via Vizag",
-    preferredVesselCategory: "Panamax",
-    maxDraftM: 14.2,
-    maxLoaM: 225,
-    maxBeamM: 32.2,
-    requiredArrivalDate: "2026-09-30",
-    targetFreightRatePerTon: 16.60,
-    status: "ACCEPTED",
-    createdAt: "3 hours ago",
-    assignedVessel: {
-      name: "MV Jag Radha",
-      category: "Panamax",
-      dwt: 76500,
-      draftM: 13.9,
-      laycan: "Sep 28–Oct 02"
-    },
-    contractorNote: "Vessel allocated from ballast fleet. Laycan confirmed.",
-    rejectionReason: null,
-    recommendedSolution: null,
-    creditRating: "Govt Enterprise / AAA",
-    stowageFactor: "45 cu ft/MT",
-    contactPerson: "Dr. K. Rath (GM Commercial Shipping)"
-  }
-];
+export const INITIAL_COMPANY_REQUIREMENTS = [];
 
 export function FlowProvider({ children }) {
   // Requirement starts as null on fresh load / page refresh so user sees the 1st simulation by default.
@@ -257,8 +120,23 @@ export function FlowProvider({ children }) {
 
   const [fixturesList, setFixturesList] = useState(INITIAL_FIXTURES);
 
-  // Central company requirements for Contractor Confirmation Dashboard
-  const [companyRequirements, setCompanyRequirements] = useState(INITIAL_COMPANY_REQUIREMENTS);
+  // Central company requirements for Contractor Confirmation Dashboard (stores only real company requirements)
+  const [companyRequirements, setCompanyRequirements] = useState(() => {
+    try {
+      const saved = localStorage.getItem("astra_company_requirements");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+    return INITIAL_COMPANY_REQUIREMENTS;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("astra_company_requirements", JSON.stringify(companyRequirements));
+    } catch {}
+  }, [companyRequirements]);
 
   // Shipbuilder & Fleet Readiness
   const [shipbuilderHulls, setShipbuilderHulls] = useState([
@@ -780,21 +658,21 @@ export function FlowProvider({ children }) {
   const [portDiverted, setPortDiverted] = useState(false);
 
 
-  // Ticker for fast-forward simulation (approx 25-30 seconds for full 0-100% cycle)
+  // Ticker for smooth, steady live voyage simulation (consistent, observable, realistic GPS tracking feel)
   useEffect(() => {
     if (!isPlaying) return;
     const interval = setInterval(() => {
       setSimProgress((prev) => {
         if (prev >= 100) return 0;
         // ── Scenario 1 guard: freeze simProgress while vessel is held in swell ──
-        // Clamped at 57% so last-mile delivery never triggers while main vessel is held in sea
-        if (weatherDelayActive && !berthReallocated && prev >= 57) return prev;
+        // Held at 54% in swell zone until emergency berth reallocation is approved
+        if (weatherDelayActive && !berthReallocated && prev >= 54) return 54;
 
-        // When resumed after berth clearance, move smoothly and slowly so the user can easily observe the voyage
-        const step = (weatherDelayActive && berthReallocated) ? (0.15 * (simSpeed || 1)) : (0.28 * (simSpeed || 1));
+        // Consistent, smooth, steady speed: ~0.08% per 80ms at 1x (~100-120 seconds full transit)
+        const step = (weatherDelayActive && berthReallocated) ? (0.07 * (simSpeed || 1)) : (0.08 * (simSpeed || 1));
         return Math.min(100, prev + step);
       });
-    }, 100);
+    }, 80);
     return () => clearInterval(interval);
   }, [isPlaying, simSpeed, weatherDelayActive, berthReallocated]);
 

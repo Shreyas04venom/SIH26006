@@ -756,6 +756,10 @@ export default function PortOperationsSimulator({
   // Live berths state
   const [liveBerths, setLiveBerths] = useState(activePort.berths);
 
+  // Dynamically resolve live values so hover & modal update continuously in real-time
+  const activeHoveredBerth = hoveredBerth ? (liveBerths.find(b => b.id === hoveredBerth.id) || hoveredBerth) : null;
+  const activeSelectedBerth = selectedBerth ? (liveBerths.find(b => b.id === selectedBerth.id) || selectedBerth) : null;
+
   // Discrete Physical Vessel Transit: exactly ONE ship moving at any time
   // transit = null | { type: "INBOUND"|"OUTBOUND"|"DIVERTING", vessel, berthIndex, progress: 0..1 }
   const [activeTransit, setActiveTransit] = useState(null);
@@ -1409,25 +1413,25 @@ export default function PortOperationsSimulator({
           </div>
         </div>
 
-        {/* Hover Tooltip */}
-        {hoveredBerth && (
+        {/* Hover Tooltip - Dynamically updates live while hovering */}
+        {activeHoveredBerth && (
           <div className="absolute bottom-3 left-3 z-20 bg-slate-950/90 backdrop-blur text-white p-2.5 rounded-lg border border-slate-700 text-xs font-mono shadow-2xl pointer-events-none">
             <div className="flex items-center gap-2">
-              <span className="px-1.5 py-0.2 rounded bg-blue-600 font-bold text-[10px]">{hoveredBerth.code}</span>
-              <strong className="text-slate-100">{hoveredBerth.name}</strong>
-              <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${hoveredBerth.status === "FREE" ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"}`}>
-                {hoveredBerth.status === "FREE" ? "🟢 FREE" : "🟡 WORKING"}
+              <span className="px-1.5 py-0.2 rounded bg-blue-600 font-bold text-[10px]">{activeHoveredBerth.code}</span>
+              <strong className="text-slate-100">{activeHoveredBerth.name}</strong>
+              <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${activeHoveredBerth.status === "FREE" ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"}`}>
+                {activeHoveredBerth.status === "FREE" ? "🟢 FREE" : "🟡 WORKING"}
               </span>
             </div>
-            {hoveredBerth.status === "OCCUPIED" && hoveredBerth.vessel ? (
+            {activeHoveredBerth.status === "OCCUPIED" && activeHoveredBerth.vessel ? (
               <div className="text-[11px] text-slate-300 mt-1">
-                <div>Moored: <strong className="text-amber-300">{hoveredBerth.vessel.name}</strong> ({hoveredBerth.vessel.category})</div>
-                <div>Cargo: {hoveredBerth.vessel.cargo} · Draft: {hoveredBerth.vessel.draftM}m</div>
-                <div className="text-emerald-300 font-bold">Progress: {hoveredBerth.vessel.progressPct}% · SLA: {hoveredBerth.vessel.turnaroundHoursRemaining}h left</div>
+                <div>Moored: <strong className="text-amber-300">{activeHoveredBerth.vessel.name}</strong> ({activeHoveredBerth.vessel.category})</div>
+                <div>Cargo: {activeHoveredBerth.vessel.cargo} · Draft: {activeHoveredBerth.vessel.draftM}m</div>
+                <div className="text-emerald-300 font-bold">Progress: {activeHoveredBerth.vessel.progressPct}% · SLA: {activeHoveredBerth.vessel.turnaroundHoursRemaining}h left</div>
               </div>
             ) : (
               <div className="text-[11px] text-emerald-300 mt-0.5">
-                Max Draft: <strong>{hoveredBerth.maxDraft}m</strong> · Depth Verified
+                Max Draft: <strong>{activeHoveredBerth.maxDraft}m</strong> · Depth Verified
               </div>
             )}
           </div>
@@ -1966,76 +1970,21 @@ export default function PortOperationsSimulator({
         </svg>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 4. CLEAN 5-BERTH MATRIX CARDS */}
-      {/* ========================================================================= */}
-      <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 font-mono text-xs">
-        {liveBerths.map((b) => {
-          const isFree = b.status === "FREE";
-          return (
-            <div
-              key={b.id}
-              onClick={() => setSelectedBerth(b)}
-              className={`p-2.5 rounded-lg border transition-all cursor-pointer hover:shadow-md flex flex-col justify-between ${
-                isFree 
-                  ? "bg-emerald-50/60 border-emerald-300 hover:border-emerald-500" 
-                  : "bg-slate-50 border-slate-300 hover:border-blue-900"
-              }`}
-            >
-              <div>
-                <div className="flex items-center justify-between">
-                  <span className="font-black text-slate-900 text-xs">{b.code}</span>
-                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-black ${isFree ? "bg-emerald-600 text-white" : "bg-blue-600 text-white"}`}>
-                    {isFree ? "FREE" : "WORKING"}
-                  </span>
-                </div>
 
-                <div className="text-[11px] font-bold text-slate-700 mt-1 truncate" title={b.name}>
-                  {b.name}
-                </div>
-              </div>
-
-              <div className="mt-2 pt-1.5 border-t border-slate-200/80">
-                {isFree ? (
-                  <div className="text-[10px] text-emerald-700 font-semibold truncate">
-                    Ready · {b.maxDraft}m Draft
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    <div className="text-[10px] text-blue-900 font-bold truncate">
-                      {b.vessel?.name}
-                    </div>
-                    <div className="flex justify-between text-[9px] text-slate-500">
-                      <span>Progress:</span>
-                      <strong>{b.vessel?.progressPct}%</strong>
-                    </div>
-                    <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-amber-500 h-full transition-all duration-200" style={{ width: `${b.vessel?.progressPct}%` }} />
-                    </div>
-                    <div className="text-[9px] text-amber-700 font-bold">
-                      SLA: {b.vessel?.turnaroundHoursRemaining}h left
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
 
       {/* ========================================================================= */}
       {/* 5. BERTH INSPECTION MODAL */}
       {/* ========================================================================= */}
-      {selectedBerth && (
+      {activeSelectedBerth && (
         <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-xl shadow-2xl border border-slate-300 w-full max-w-md overflow-hidden animate-in zoom-in-95 font-mono text-xs">
             <div className="p-3.5 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <span className="px-2 py-0.5 rounded bg-blue-600 font-black text-xs">
-                  {selectedBerth.code}
+                  {activeSelectedBerth.code}
                 </span>
                 <h4 className="font-extrabold text-base tracking-tight" style={{ fontFamily: "Manrope" }}>
-                  {selectedBerth.name}
+                  {activeSelectedBerth.name}
                 </h4>
               </div>
               <button
@@ -2051,37 +2000,37 @@ export default function PortOperationsSimulator({
                 <div>
                   <span className="text-slate-500 text-[10px]">STATUS</span>
                   <div className="font-bold text-xs text-slate-900 mt-0.5">
-                    {selectedBerth.status === "FREE" ? "🟢 FREE SLOT" : "🟡 WORKING"}
+                    {activeSelectedBerth.status === "FREE" ? "🟢 FREE SLOT" : "🟡 WORKING"}
                   </div>
                 </div>
                 <div className="text-right">
                   <span className="text-slate-500 text-[10px]">MAX DRAFT</span>
                   <div className="font-bold text-xs text-slate-900 mt-0.5">
-                    {selectedBerth.maxDraft}m
+                    {activeSelectedBerth.maxDraft}m
                   </div>
                 </div>
               </div>
 
-              {selectedBerth.status === "OCCUPIED" && selectedBerth.vessel ? (
+              {activeSelectedBerth.status === "OCCUPIED" && activeSelectedBerth.vessel ? (
                 <div className="p-3 bg-blue-50/60 rounded-lg border border-blue-200 space-y-1.5">
                   <div className="flex justify-between items-center border-b border-blue-200 pb-1.5">
-                    <strong className="text-xs text-blue-950">{selectedBerth.vessel.name}</strong>
+                    <strong className="text-xs text-blue-950">{activeSelectedBerth.vessel.name}</strong>
                     <span className="px-1.5 py-0.2 rounded bg-blue-900 text-white text-[9px] font-bold">
-                      {selectedBerth.vessel.category}
+                      {activeSelectedBerth.vessel.category}
                     </span>
                   </div>
-                  <div className="text-[11px] text-slate-700">Cargo: <strong>{selectedBerth.vessel.cargo}</strong></div>
-                  <div className="text-[11px] text-slate-700">Carrier: <strong>{selectedBerth.vessel.carrier}</strong></div>
+                  <div className="text-[11px] text-slate-700">Cargo: <strong>{activeSelectedBerth.vessel.cargo}</strong></div>
+                  <div className="text-[11px] text-slate-700">Carrier: <strong>{activeSelectedBerth.vessel.carrier}</strong></div>
                   <div className="space-y-1 pt-1">
                     <div className="flex justify-between text-[10px] text-slate-500">
                       <span>Unloading:</span>
-                      <strong>{selectedBerth.vessel.progressPct}%</strong>
+                      <strong>{activeSelectedBerth.vessel.progressPct}%</strong>
                     </div>
                     <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                      <div className="bg-amber-500 h-full" style={{ width: `${selectedBerth.vessel.progressPct}%` }} />
+                      <div className="bg-amber-500 h-full" style={{ width: `${activeSelectedBerth.vessel.progressPct}%` }} />
                     </div>
                     <div className="text-[10px] text-amber-800 font-bold pt-0.5">
-                      Turnaround SLA: {selectedBerth.vessel.turnaroundHoursRemaining} hours left
+                      Turnaround SLA: {activeSelectedBerth.vessel.turnaroundHoursRemaining} hours left
                     </div>
                   </div>
                 </div>

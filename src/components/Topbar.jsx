@@ -151,9 +151,9 @@ export default function Topbar({ sidebarOpen = true, onToggleSidebar }) {
   };
 
   return (
-    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6 gap-4 sticky top-0 z-20">
+    <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-6 gap-2 sm:gap-4 sticky top-0 z-20 print:hidden">
       {/* Left Menu Toggle + Search Bar */}
-      <div className="flex items-center gap-3 flex-1 max-w-md">
+      <div className="flex items-center gap-2 sm:gap-3 flex-1 min-w-0 max-w-md">
         {onToggleSidebar && (
           <button
             onClick={onToggleSidebar}
@@ -169,7 +169,7 @@ export default function Topbar({ sidebarOpen = true, onToggleSidebar }) {
           </button>
         )}
 
-        <div className="relative flex-1">
+        <div className="relative flex-1 hidden md:block">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             data-testid="topbar-search"
@@ -180,36 +180,36 @@ export default function Topbar({ sidebarOpen = true, onToggleSidebar }) {
       </div>
 
       {/* Center/Right Controls */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-2 sm:gap-3 shrink-0">
         {/* 1-Click 4-Persona Role Switcher */}
-        <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-mono">
+        <div className="flex items-center bg-slate-100 p-0.5 sm:p-1 rounded-lg border border-slate-200 text-xs font-mono overflow-x-auto no-scrollbar shrink-0">
           <button
             onClick={() => switchRole("company@astra.io", "Tata Steel Logistics (Company)")}
-            className={`px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 ${(!user?.role || user?.role === "company" || user?.role === "logistics_manager") ? "bg-blue-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"}`}
+            className={`px-1.5 sm:px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 text-[11px] sm:text-xs ${(!user?.role || user?.role === "company" || user?.role === "logistics_manager") ? "bg-blue-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"}`}
             title="Switch to Company (Shipper / Cargo Owner)"
           >
-            <span>🏢</span> COMPANY
+            <span>🏢</span> <span className="hidden sm:inline">COMPANY</span><span className="sm:hidden">CO</span>
           </button>
           <button
             onClick={() => switchRole("contractor@astra.io", "Tata NYK Shipping (Contractor)")}
-            className={`px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 ${(user?.role === "contractor" || user?.role === "chartering_operator") ? "bg-blue-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"}`}
+            className={`px-1.5 sm:px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 text-[11px] sm:text-xs ${(user?.role === "contractor" || user?.role === "chartering_operator") ? "bg-blue-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"}`}
             title="Switch to Ocean Contractor (Fleet & Vessel Operator)"
           >
-            <span>🚢</span> CONTRACTOR
+            <span>🚢</span> <span className="hidden sm:inline">CONTRACTOR</span><span className="sm:hidden">SHIP</span>
           </button>
           <button
             onClick={() => switchRole("road@astra.io", "Intermodal Road Express (Transporter)")}
-            className={`px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 ${(user?.role === "road_transporter" || user?.role === "transporter") ? "bg-blue-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"}`}
+            className={`px-1.5 sm:px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 text-[11px] sm:text-xs ${(user?.role === "road_transporter" || user?.role === "transporter") ? "bg-blue-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"}`}
             title="Switch to Road Transporter (Inland Fleet & Gate Passes)"
           >
-            <span>🚛</span> ROAD FLEET
+            <span>🚛</span> <span className="hidden sm:inline">ROAD FLEET</span><span className="sm:hidden">ROAD</span>
           </button>
           <button
             onClick={() => switchRole("port@astra.io", "Paradip Port Authority (Port Ops)")}
-            className={`px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1.5 ${(user?.role === "port_operator" || user?.role === "vessel_operator") ? "bg-blue-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"}`}
+            className={`px-1.5 sm:px-2.5 py-1 rounded-md font-bold transition-all flex items-center gap-1 sm:gap-1.5 shrink-0 text-[11px] sm:text-xs ${(user?.role === "port_operator" || user?.role === "vessel_operator") ? "bg-blue-900 text-white shadow-sm" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"}`}
             title="Switch to Port Operator (Berth Allocation & Dynamic Reschedule)"
           >
-            <span>⚓</span> PORT OPS
+            <span>⚓</span> <span className="hidden sm:inline">PORT OPS</span><span className="sm:hidden">PORT</span>
           </button>
         </div>
 
